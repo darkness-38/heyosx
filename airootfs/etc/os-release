@@ -1,0 +1,11 @@
+NAME="heyOS"
+PRETTY_NAME="heyOS"
+ID=heyos
+BUILD_ID=rolling
+ANSI_COLOR="38;2;23;147;209"
+HOME_URL="https://heyos.org/"
+DOCUMENTATION_URL="https://wiki.heyos.org/"
+SUPPORT_URL="https://bbs.heyos.org/"
+BUG_REPORT_URL="https://bugs.heyos.org/"
+PRIVACY_POLICY_URL="https://terms.heyos.org/docs/privacy-policy/"
+LOGO=archlinux-logo

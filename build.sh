@@ -5,10 +5,9 @@
 # This script runs on an Arch Linux host to:
 #   1. Install build dependencies
 #   2. Compile the heyDM compositor (Rust → release binary)
-#   3. Compile the hey-greeter login manager (Rust → release binary)
-#   4. Deploy binaries into the airootfs overlay
-#   5. Set correct permissions
-#   6. Invoke mkarchiso to produce the final heyOS ISO
+#   3. Deploy binaries into the airootfs overlay
+#   4. Set correct permissions
+#   5. Invoke mkarchiso to produce the final heyOS ISO
 #
 # Usage:  sudo bash build.sh [--clean]
 #   --clean    Force a full rebuild (wipe work dir and cargo cache)
@@ -108,7 +107,6 @@ if [[ "$SCRIPT_DIR" == /mnt/* ]]; then
         --exclude='pkg-cache/' \
         --exclude='.git/' \
         --exclude='heydm/target/' \
-        --exclude='hey-greeter/target/' \
         "$SCRIPT_DIR/" "$NATIVE_BUILD_DIR/"
 
     log_ok "Project synced to $NATIVE_BUILD_DIR"
@@ -216,7 +214,6 @@ build_rust() {
 }
 
 build_rust "heyDM (Wayland compositor)" "heydm"
-build_rust "hey-greeter (login manager)" "hey-greeter"
 
 # =============================================================================
 # Step 4: Deploy Binaries into airootfs
@@ -228,8 +225,6 @@ mkdir -p "${AIROOTFS}/usr/bin"
 mkdir -p "${AIROOTFS}/usr/local/bin"
 
 cp "${BUILD_TMP}/heydm/target/release/heydm" "${AIROOTFS}/usr/bin/heydm"
-cp "${BUILD_TMP}/hey-greeter/target/release/hey-greeter" "${AIROOTFS}/usr/bin/hey-greeter"
-cp "${BUILD_TMP}/hey-greeter/target/release/hey-greeter-ui" "${AIROOTFS}/usr/bin/hey-greeter-ui"
 
 log_ok "Binaries deployed to airootfs/usr/bin/"
 
@@ -240,8 +235,6 @@ log_ok "Binaries deployed to airootfs/usr/bin/"
 log_step "Step 5: Setting file permissions"
 
 chmod 755 "${AIROOTFS}/usr/bin/heydm"
-chmod 755 "${AIROOTFS}/usr/bin/hey-greeter"
-chmod 755 "${AIROOTFS}/usr/bin/hey-greeter-ui"
 chmod 755 "${AIROOTFS}/usr/local/bin/hey-install"
 chmod 755 "${AIROOTFS}/root/customize_airootfs.sh"
 
@@ -277,13 +270,18 @@ mkdir -p "$OUTPUT_DIR"
 
 # Remove old ISOs to avoid confusion
 rm -f "${OUTPUT_DIR}"/heyOS-*.iso
+# Remove all mkarchiso state files so it doesn't skip generation.
+# This forces it to re-copy updated binaries, rebuild squashfs, and generate the final .iso,
+# while still allowing pacstrap to instantly reuse the already-installed packages in the work dir.
+rm -f "${WORK_DIR}"/base._* "${WORK_DIR}"/iso.* "${WORK_DIR}"/build.*
 
 # Fix Windows CRLF → Unix LF line endings using dos2unix (much faster than sed find)
 log "Ensuring Unix line endings for profile files..."
 find "$SCRIPT_DIR" -maxdepth 1 \( -name '*.sh' -o -name '*.cfg' -o -name 'packages.*' \) -exec dos2unix -q {} +
 find "$SCRIPT_DIR/syslinux" "$SCRIPT_DIR/efiboot" -type f -exec dos2unix -q {} + 2>/dev/null || true
 find "$SCRIPT_DIR/airootfs" -type f \( -name '*.conf' -o -name '*.sh' -o -name '*.service' \
-    -o -name '*.gen' -o -name 'shadow' -o -name 'gshadow' -o -name 'hostname' \) \
+    -o -name '*.gen' -o -name 'shadow' -o -name 'gshadow' -o -name 'hostname' -o -name 'hey-install' \
+    -o -name 'os-release' -o -name 'issue' \) \
     -exec dos2unix -q {} + 2>/dev/null || true
 
 log "Running mkarchiso..."

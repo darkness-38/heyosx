@@ -17,12 +17,15 @@ sudo
 systemd
 mkinitcpio
 mkinitcpio-archiso
+arch-install-scripts
+reflector
 
 # ---- Bootloader ----
 grub
 efibootmgr
 dosfstools
 syslinux
+gptfdisk
 
 # ---- Hardware / VM Support ----
 open-vm-tools
@@ -35,7 +38,6 @@ libxkbcommon
 libinput
 seatd
 xorg-xwayland
-cage
 
 # ---- Networking ----
 networkmanager
@@ -79,6 +81,9 @@ glibc
 
 # ---- PAM ----
 pam
+sddm
+weston
+plasma-workspace
 
 # ---- D-Bus (required by many services) ----
 dbus

@@ -22,7 +22,7 @@ NC='\033[0m' # No Color
 
 # ---- Configuration ----
 MOUNT_POINT="/mnt"
-LOG_FILE="/tmp/hey-install.log"
+LOG_FILE="/var/log/hey-install.log"
 
 # =============================================================================
 # Utility Functions
@@ -66,6 +66,9 @@ EOF
 preflight_checks() {
     log_step "Running pre-flight checks"
 
+    # Trap EXIT to ensure we always unmount if the script fails or is Ctrl+C'd
+    trap cleanup EXIT
+
     # Must be root
     if [[ $EUID -ne 0 ]]; then
         log_err "This installer must be run as root (use sudo)."
@@ -86,7 +89,7 @@ preflight_checks() {
     fi
 
     # Check network connectivity
-    if ping -c 1 archlinux.org &>/dev/null; then
+    if ping -c 1 -W 2 archlinux.org &>/dev/null; then
         log_ok "Network connectivity confirmed"
     else
         log_err "No network connectivity. Please configure networking first."
@@ -167,41 +170,36 @@ partition_disk() {
     sgdisk --zap-all "$TARGET_DISK" >> "$LOG_FILE" 2>&1
 
     if [[ "$BOOT_MODE" == "uefi" ]]; then
-        # GPT partition table for UEFI:
-        #   Partition 1: 512MB EFI System Partition (ESP)
-        #   Partition 2: Remainder as Linux root
-
+        # GPT partition table for UEFI
         log_info "Creating GPT partition table (UEFI)..."
-
         sgdisk -n 1:0:+512M -t 1:EF00 -c 1:"EFI System" "$TARGET_DISK" >> "$LOG_FILE" 2>&1
         sgdisk -n 2:0:0     -t 2:8300 -c 2:"heyOS Root"  "$TARGET_DISK" >> "$LOG_FILE" 2>&1
 
-        # Detect partition naming convention
-        if [[ "$TARGET_DISK" == *nvme* ]] || [[ "$TARGET_DISK" == *mmcblk* ]]; then
-            EFI_PART="${TARGET_DISK}p1"
-            ROOT_PART="${TARGET_DISK}p2"
-        else
-            EFI_PART="${TARGET_DISK}1"
-            ROOT_PART="${TARGET_DISK}2"
+        # Use lsblk to safely find the new partitions regardless of naming scheme (e.g. sda1 vs nvmeON1p1)
+        partprobe "$TARGET_DISK" 2>/dev/null || true
+        sleep 2
+        EFI_PART=$(lsblk -rnpo NAME "$TARGET_DISK" | sed '1d' | head -n 1)
+        ROOT_PART=$(lsblk -rnpo NAME "$TARGET_DISK" | sed '1,2d' | head -n 1)
+        
+        if [[ -z "$EFI_PART" || -z "$ROOT_PART" ]]; then
+             log_err "Failed to detect newly created UEFI partitions."
+             exit 1
         fi
     else
-        # MBR for BIOS:
-        #   Partition 1: Entire disk as Linux root
+        # MBR for BIOS
         log_info "Creating MBR partition table (BIOS)..."
-
         echo -e "o\nn\np\n1\n\n\nw" | fdisk "$TARGET_DISK" >> "$LOG_FILE" 2>&1
 
-        if [[ "$TARGET_DISK" == *nvme* ]] || [[ "$TARGET_DISK" == *mmcblk* ]]; then
-            ROOT_PART="${TARGET_DISK}p1"
-        else
-            ROOT_PART="${TARGET_DISK}1"
-        fi
+        partprobe "$TARGET_DISK" 2>/dev/null || true
+        sleep 2
+        ROOT_PART=$(lsblk -rnpo NAME "$TARGET_DISK" | sed '1d' | head -n 1)
         EFI_PART=""
+        
+        if [[ -z "$ROOT_PART" ]]; then
+             log_err "Failed to detect newly created BIOS partition."
+             exit 1
+        fi
     fi
-
-    # Wait for kernel to re-read partition table
-    partprobe "$TARGET_DISK" 2>/dev/null || true
-    sleep 2
 
     log_ok "Partitioning complete"
     log_info "  EFI:  ${EFI_PART:-N/A}"
@@ -274,6 +272,12 @@ mount_filesystems() {
 install_base() {
     log_step "Installing base system (this may take several minutes)"
 
+    # Enable parallel downloads for faster pacstrap
+    sed -i 's/^#ParallelDownloads/ParallelDownloads/' /etc/pacman.conf
+
+    log_info "Fetching latest pacman mirrors (this may take a moment)..."
+    reflector --latest 10 --protocol https --sort rate --save /etc/pacman.d/mirrorlist 2>&1 | tee -a "$LOG_FILE"
+
     pacstrap -K "$MOUNT_POINT" \
         base linux linux-firmware \
         sudo systemd \
@@ -284,8 +288,9 @@ install_base() {
         alacritty firefox thunar \
         wayland wayland-protocols libxkbcommon libinput seatd \
         xorg-xwayland \
+        sddm weston plasma-workspace \
         ttf-dejavu ttf-liberation noto-fonts \
-        grub efibootmgr dosfstools \
+        grub efibootmgr dosfstools os-prober amd-ucode intel-ucode \
         dbus gvfs tumbler \
         bash-completion which less man-db man-pages \
         2>&1 | tee -a "$LOG_FILE"
@@ -305,7 +310,7 @@ configure_system() {
     log_ok "fstab generated"
 
     # Copy heyOS custom files into the installed system
-    log_info "Deploying heyDM compositor and hey-greeter..."
+    log_info "Deploying heyDM compositor..."
 
     # Copy binaries (they should exist in the live ISO's /usr/bin/)
     if [[ -f /usr/bin/heydm ]]; then
@@ -313,18 +318,30 @@ configure_system() {
         chmod 755 "$MOUNT_POINT/usr/bin/heydm"
     fi
 
-    if [[ -f /usr/bin/hey-greeter ]]; then
-        cp /usr/bin/hey-greeter "$MOUNT_POINT/usr/bin/hey-greeter"
-        chmod 755 "$MOUNT_POINT/usr/bin/hey-greeter"
-    fi
+    # Ensure the Wayland sessions directory exists
+    mkdir -p "$MOUNT_POINT/usr/share/wayland-sessions"
+    cat << 'EOF' > "$MOUNT_POINT/usr/share/wayland-sessions/heydm.desktop"
+[Desktop Entry]
+Name=heyDM
+Comment=The custom Wayland compositor for heyOS
+Exec=/usr/bin/heydm
+Type=Application
+DesktopNames=heydm
+EOF
 
-    # Copy systemd service
-    cp /etc/systemd/system/hey-greeter.service \
-       "$MOUNT_POINT/etc/systemd/system/hey-greeter.service" 2>/dev/null || true
+    # Configure SDDM to use Wayland natively
+    mkdir -p "$MOUNT_POINT/etc/sddm.conf.d"
+    cat << 'EOF' > "$MOUNT_POINT/etc/sddm.conf.d/wayland.conf"
+[General]
+DisplayServer=wayland
 
-    # Copy PAM config
-    cp /etc/pam.d/hey-greeter \
-       "$MOUNT_POINT/etc/pam.d/hey-greeter" 2>/dev/null || true
+[Wayland]
+CompositorCommand=weston --shell=kiosk-shell.so
+EnableHiDPI=true
+
+[Theme]
+Current=breeze
+EOF
 
     # ---- Chroot configuration ----
     cat << 'CHROOT_SCRIPT' > "$MOUNT_POINT/tmp/hey-setup.sh"
@@ -352,7 +369,7 @@ EOF
 systemctl enable NetworkManager.service
 systemctl enable vmtoolsd.service 2>/dev/null || true
 systemctl enable seatd.service
-systemctl enable hey-greeter.service 2>/dev/null || true
+systemctl enable sddm.service 2>/dev/null || true
 systemctl set-default graphical.target
 
 # Sudoers
@@ -381,6 +398,7 @@ install_bootloader() {
 
     if [[ "$BOOT_MODE" == "uefi" ]]; then
         log_info "Installing GRUB for UEFI..."
+        mkdir -p "$MOUNT_POINT/boot/efi"
         arch-chroot "$MOUNT_POINT" grub-install \
             --target=x86_64-efi \
             --efi-directory=/boot/efi \
@@ -397,6 +415,7 @@ install_bootloader() {
     arch-chroot "$MOUNT_POINT" bash -c '
         sed -i "s/GRUB_TIMEOUT=5/GRUB_TIMEOUT=3/" /etc/default/grub
         sed -i "s/GRUB_DISTRIBUTOR=\"Arch\"/GRUB_DISTRIBUTOR=\"heyOS\"/" /etc/default/grub
+        echo "GRUB_DISABLE_OS_PROBER=false" >> /etc/default/grub
         grub-mkconfig -o /boot/grub/grub.cfg
     ' 2>&1 | tee -a "$LOG_FILE"
 
@@ -410,9 +429,11 @@ install_bootloader() {
 setup_user() {
     log_step "User Account Setup"
 
-    # Set root password
-    echo -en "${BOLD}Set root password: ${NC}"
-    arch-chroot "$MOUNT_POINT" passwd
+    # Set root password (loop until success)
+    echo -en "${BOLD}Set root password: ${NC}\n"
+    while ! arch-chroot "$MOUNT_POINT" passwd; do
+        log_warn "Password setting failed. Please try again."
+    done
 
     # Create the primary user
     echo ""
@@ -428,7 +449,9 @@ setup_user() {
     arch-chroot "$MOUNT_POINT" useradd -m -G wheel,video,audio,input,seat -s /bin/bash "$NEW_USER"
 
     echo -e "${BOLD}Set password for '$NEW_USER':${NC}"
-    arch-chroot "$MOUNT_POINT" passwd "$NEW_USER"
+    while ! arch-chroot "$MOUNT_POINT" passwd "$NEW_USER"; do
+        log_warn "Password setting failed for '$NEW_USER'. Please try again."
+    done
 
     log_ok "User '$NEW_USER' created with wheel, video, audio, input, seat groups"
 }
@@ -442,9 +465,13 @@ cleanup() {
 
     # Unmount everything
     log_info "Unmounting filesystems..."
-    umount -R "$MOUNT_POINT" 2>/dev/null || true
-
-    log_ok "Filesystems unmounted"
+    if mountpoint -q "$MOUNT_POINT"; then
+        umount -R "$MOUNT_POINT" 2>/dev/null || true
+        log_ok "Filesystems unmounted"
+    fi
+    
+    # Remove trap so it doesn't fire again on normal exit
+    trap - EXIT
 }
 
 show_complete() {
@@ -471,11 +498,11 @@ EOF
 main() {
     show_banner
 
+    preflight_checks
+    
     # Initialize log
     echo "=== heyOS Installation Log ===" > "$LOG_FILE"
     echo "Started: $(date)" >> "$LOG_FILE"
-
-    preflight_checks
     select_disk
     select_filesystem
     partition_disk

@@ -25,9 +25,7 @@ echo 'root:heyos' | chpasswd
 systemctl enable NetworkManager.service 2>/dev/null || true
 systemctl enable vmtoolsd.service 2>/dev/null || true
 systemctl enable seatd.service 2>/dev/null || true
-systemctl enable hey-greeter.service 2>/dev/null || true
-
-# Set graphical target as default
-systemctl set-default graphical.target
+# Set multi-user target as default (CLI boot)
+systemctl set-default multi-user.target
 
 echo "[heyOS] First-boot setup complete."
