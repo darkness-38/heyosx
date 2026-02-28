@@ -1,0 +1,93 @@
+# =============================================================================
+# heyOS — packages.x86_64
+# Complete package list for the heyOS Arch Linux live ISO
+# =============================================================================
+
+# ---- System Core ----
+base
+linux
+# replace generic linux-firmware with essentials for faster builds
+linux-firmware-whence
+linux-firmware-intel
+linux-firmware-amdgpu
+linux-firmware-radeon
+linux-firmware-realtek
+linux-firmware-atheros
+sudo
+systemd
+mkinitcpio
+mkinitcpio-archiso
+
+# ---- Bootloader ----
+grub
+efibootmgr
+dosfstools
+syslinux
+
+# ---- Hardware / VM Support ----
+open-vm-tools
+mesa
+
+# ---- Wayland Stack ----
+wayland
+wayland-protocols
+libxkbcommon
+libinput
+seatd
+xorg-xwayland
+cage
+
+# ---- Networking ----
+networkmanager
+iwd
+dhcpcd
+
+# ---- Audio (PipeWire) ----
+pipewire
+pipewire-pulse
+pipewire-alsa
+wireplumber
+
+# ---- Fonts ----
+ttf-dejavu
+ttf-liberation
+noto-fonts
+noto-fonts-emoji
+
+# ---- Terminal & Utilities ----
+nano
+vim
+alacritty
+bash-completion
+which
+less
+man-db
+man-pages
+fastfetch
+
+# ---- File Manager ----
+thunar
+gvfs
+tumbler
+
+# ---- Web Browser ----
+firefox
+
+# ---- Development / Build (needed for first-boot tasks) ----
+gcc
+glibc
+
+# ---- PAM ----
+pam
+
+# ---- D-Bus (required by many services) ----
+dbus
+
+# ---- Misc ----
+git
+wget
+curl
+htop
+memtest86+
+memtest86+-efi
+edk2-shell

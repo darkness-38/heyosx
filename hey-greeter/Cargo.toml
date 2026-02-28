@@ -1,0 +1,31 @@
+[package]
+name = "hey-greeter"
+version = "0.1.0"
+edition = "2021"
+description = "heyOS login manager daemon"
+
+[dependencies]
+eframe = { version = "0.27", default-features = false, features = ["wayland", "default_fonts", "glow"] }
+egui = "0.27"
+# Unix system calls
+nix = { version = "0.28", features = ["user", "process", "term", "fs"] }
+# PAM authentication (raw FFI via libc — bindings defined in auth.rs)
+libc = "0.2"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[[bin]]
+name = "hey-greeter"
+path = "src/main.rs"
+
+[[bin]]
+name = "hey-greeter-ui"
+path = "src/ui.rs"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+opt-level = "s"

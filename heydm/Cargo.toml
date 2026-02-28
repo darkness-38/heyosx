@@ -1,0 +1,62 @@
+[package]
+name = "heydm"
+version = "0.1.0"
+edition = "2021"
+authors = ["heyOS Project"]
+description = "heyDM — A custom Wayland compositor for heyOS, built with Smithay"
+license = "GPL-3.0"
+
+[dependencies]
+# Smithay — Wayland compositor framework
+smithay = { git = "https://github.com/Smithay/smithay", default-features = false, features = [
+    "backend_drm",
+    "backend_libinput",
+    "backend_udev",
+    "backend_session_libseat",
+    "backend_winit",
+    "desktop",
+    "renderer_glow",
+    "wayland_frontend",
+    "xwayland",
+] }
+
+# Wayland protocol support
+wayland-server = "0.31"
+wayland-protocols = { version = "0.31", features = ["server"] }
+
+# Event loop
+calloop = { version = "0.14", features = ["executor"] }
+
+# Unix / Linux system calls
+nix = { version = "0.28", features = ["user", "signal", "process", "fs"] }
+libc = "0.2"
+udev = "0.9"
+drm = "0.14"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Time handling for the panel clock
+chrono = "0.4"
+
+# XKB for keyboard layout management
+xkbcommon = "0.7"
+
+# Image rendering for UI elements
+tiny-skia = "0.11"
+
+# Font rendering for panel and launcher
+fontdue = "0.8"
+
+# Reading .desktop files for the launcher
+freedesktop-desktop-entry = "0.5"
+
+# Directory scanning
+walkdir = "2"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+opt-level = "s"

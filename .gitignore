@@ -1,0 +1,21 @@
+# Archiso work and output directories
+/work/
+/out/
+/pkg-cache/
+
+# Rust / Cargo build artifacts
+**/target/
+Cargo.lock
+
+# Build logs
+build_log.txt
+
+# OS-specific / IDE files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.bak
+
+# Temporary build files
+/tmp/

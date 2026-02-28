@@ -1,0 +1,9 @@
+# =============================================================================
+# heyOS /etc/sudoers — allow wheel group members to use sudo
+# =============================================================================
+root ALL=(ALL:ALL) ALL
+%wheel ALL=(ALL:ALL) ALL
+
+# Defaults
+Defaults env_keep += "HOME"
+Defaults env_keep += "LANG LANGUAGE LC_ALL"
