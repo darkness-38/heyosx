@@ -52,8 +52,8 @@ To build heyOS, you need an Arch Linux environment. The build script automates e
 
 ```bash
 # Clone the repository
-git clone https://github.com/heyos-project/heyos.git
-cd heyos
+git clone https://github.com/darkness-38/heyosx
+cd heyosx
 
 # Run the master build script (requires sudo for mkarchiso)
 sudo ./build.sh
