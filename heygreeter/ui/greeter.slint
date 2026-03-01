@@ -6,7 +6,7 @@ export component AppWindow inherits Window {
     title: "heyOS Greeter";
     no-frame: true;
     background: transparent;
-    default-font-family: "Segoe UI", "sans-serif";
+    default-font-family: "Segoe UI", "Tahoma", "sans-serif";
 
     callback login(string, string, string);
 
@@ -18,196 +18,228 @@ export component AppWindow inherits Window {
     in property <string> current-time: "12:20 AM";
     in property <string> current-date: "Saturday, May 2, 2020";
 
-    out property <string> selected-user: users[0];
+    out property <string> selected-user: users[user-index];
     out property <string> selected-session: sessions[0];
     
-    // Background gradient mimicking the image (brown on left, teal on right)
+    property <int> user-index: 0;
+    property <bool> show-user-list: false;
+
+    // Background gradient matching greeter.png
     Rectangle {
         width: 100%;
         height: 100%;
-        background: @linear-gradient(135deg, #7b5946 0%, #4a6d7c 50%, #203a48 100%);
+        background: @linear-gradient(135deg, #a67c52 0%, #4a8c9c 60%, #1e4552 100%);
     }
 
-    // Top Clock Section
+    // Main Centered Layout
     VerticalBox {
-        y: parent.height * 0.12;
-        width: 100%;
-        spacing: 5px;
-        alignment: start;
+        alignment: center;
+        spacing: 60px;
 
-        Text {
-            text: root.current-time;
-            font-size: 110px;
-            font-weight: 300;
-            color: white;
-            horizontal-alignment: center;
+        // Top Clock Section
+        VerticalBox {
+            spacing: 0px;
+            Text {
+                text: root.current-time;
+                font-size: 100px;
+                font-weight: 300;
+                color: white;
+                horizontal-alignment: center;
+            }
+            Text {
+                text: root.current-date;
+                font-size: 28px;
+                font-weight: 400;
+                color: white;
+                horizontal-alignment: center;
+            }
         }
-        Text {
-            text: root.current-date;
-            font-size: 32px;
-            font-weight: 400;
-            color: white;
-            horizontal-alignment: center;
-        }
-    }
 
-    // Main Login Area
-    VerticalBox {
-        y: parent.height * 0.38;
-        width: 100%;
-        spacing: 25px;
-        alignment: start;
-
-        // User Avatar
-        HorizontalBox {
+        // Main Login Area
+        VerticalBox {
+            spacing: 25px;
             alignment: center;
+
+            // User Avatar
             Rectangle {
-                width: 150px;
-                height: 150px;
-                border-radius: 75px;
+                width: 140px;
+                height: 140px;
+                border-radius: 70px;
                 border-width: 2px;
                 border-color: white;
                 background: transparent;
                 clip: true;
 
-                // Head
                 Rectangle {
-                    width: 54px;
-                    height: 54px;
-                    border-radius: 27px;
+                    width: 48px;
+                    height: 48px;
+                    border-radius: 24px;
                     border-width: 2px;
                     border-color: white;
-                    x: 48px;
-                    y: 26px;
+                    x: 46px;
+                    y: 28px;
                 }
-                // Shoulders
                 Rectangle {
-                    width: 110px;
-                    height: 60px;
-                    border-radius: 55px;
+                    width: 96px;
+                    height: 50px;
+                    border-radius: 48px;
                     border-width: 2px;
                     border-color: white;
-                    x: 20px;
-                    y: 95px;
+                    x: 22px;
+                    y: 90px;
                 }
             }
-        }
 
-        // Username
-        Text {
-            text: root.selected-user;
-            font-size: 36px;
-            font-weight: 400;
-            color: white;
-            horizontal-alignment: center;
-        }
-
-        // Password Input
-        HorizontalBox {
-            alignment: center;
-            spacing: 0px;
-            
-            pwd := LineEdit {
-                width: 280px;
-                height: 40px;
-                placeholder-text: "Password";
-                input-type: password;
-                font-size: 18px;
-                accepted => { root.login(root.selected-user, self.text, root.selected-session); }
-            }
-            
-            Rectangle {
-                width: 40px;
-                height: 40px;
-                background: touch.pressed ? #d0d0d0 : (touch.has-hover ? #f0f0f0 : white);
-                border-color: #cccccc;
-                border-width: 1px;
-                
+            // Username with Mini Arrow
+            HorizontalBox {
+                alignment: center;
+                spacing: 10px;
                 Text {
-                    text: "➔";
-                    font-size: 20px;
-                    color: #333333;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
+                    text: root.selected-user;
+                    font-size: 36px;
+                    font-weight: 400;
+                    color: white;
                 }
-
-                touch := TouchArea {
-                    clicked => { root.login(root.selected-user, pwd.text, root.selected-session); }
+                
+                // Mini Arrow / User Changer Trigger
+                Rectangle {
+                    width: 24px;
+                    height: 24px;
+                    Text {
+                        text: "⌄";
+                        font-size: 24px;
+                        color: white;
+                        vertical-alignment: center;
+                    }
+                    TouchArea {
+                        clicked => { root.show-user-list = !root.show-user-list; }
+                    }
                 }
             }
-        }
 
-        if (root.error-message != "") : Text {
-            text: root.error-message;
-            color: #ff4d4d;
-            font-size: 16px;
-            horizontal-alignment: center;
+            // User Dropdown List (Simulated)
+            if (root.show-user-list) : Rectangle {
+                width: 200px;
+                height: 80px;
+                background: #ffffffdd;
+                border-radius: 4px;
+                VerticalBox {
+                    padding: 5px;
+                    for user[i] in root.users : Rectangle {
+                        height: 30px;
+                        background: user-touch.has-hover ? #0078d7 : transparent;
+                        Text {
+                            text: user;
+                            color: user-touch.has-hover ? white : black;
+                            padding-left: 10px;
+                            vertical-alignment: center;
+                        }
+                        user-touch := TouchArea {
+                            clicked => { 
+                                root.user-index = i;
+                                root.show-user-list = false;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Password Input
+            HorizontalBox {
+                alignment: center;
+                spacing: 0px;
+                
+                Rectangle {
+                    width: 280px;
+                    height: 38px;
+                    background: white;
+                    border-width: 1px;
+                    border-color: #999999;
+                    
+                    pwd := LineEdit {
+                        width: 100%;
+                        height: 100%;
+                        placeholder-text: "Password";
+                        input-type: password;
+                        font-size: 16px;
+                        accepted => { root.login(root.selected-user, self.text, root.selected-session); }
+                    }
+                }
+                
+                Rectangle {
+                    width: 38px;
+                    height: 38px;
+                    background: touch.pressed ? #bbbbbb : (touch.has-hover ? #dddddd : #eeeeee);
+                    border-color: #999999;
+                    border-width: 1px;
+                    
+                    Text {
+                        text: "➔";
+                        font-size: 20px;
+                        color: #444444;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+
+                    touch := TouchArea {
+                        clicked => { root.login(root.selected-user, pwd.text, root.selected-session); }
+                    }
+                }
+            }
+
+            if (root.error-message != "") : Text {
+                text: root.error-message;
+                color: #ff4d4d;
+                font-size: 14px;
+                horizontal-alignment: center;
+            }
         }
     }
 
     // Bottom System Controls
     HorizontalBox {
-        y: parent.height - 140px;
+        y: parent.height - 120px;
         width: 100%;
         alignment: center;
-        spacing: 60px;
+        spacing: 50px;
 
-        // Sleep
         VerticalBox {
-            spacing: 10px;
-            alignment: center;
-            Text { text: "☾"; color: white; font-size: 32px; font-weight: 100; horizontal-alignment: center; }
-            Text { text: "Sleep"; color: white; font-size: 18px; horizontal-alignment: center; }
+            spacing: 8px; alignment: center;
+            Text { text: "☾"; color: white; font-size: 28px; horizontal-alignment: center; }
+            Text { text: "Sleep"; color: white; font-size: 14px; horizontal-alignment: center; }
         }
-        // Restart
         VerticalBox {
-            spacing: 10px;
-            alignment: center;
-            Text { text: "↻"; color: white; font-size: 32px; font-weight: 100; horizontal-alignment: center; }
-            Text { text: "Restart"; color: white; font-size: 18px; horizontal-alignment: center; }
+            spacing: 8px; alignment: center;
+            Text { text: "↻"; color: white; font-size: 28px; horizontal-alignment: center; }
+            Text { text: "Restart"; color: white; font-size: 14px; horizontal-alignment: center; }
         }
-        // Shut Down
         VerticalBox {
-            spacing: 10px;
-            alignment: center;
-            Text { text: "⏻"; color: white; font-size: 32px; font-weight: 100; horizontal-alignment: center; }
-            Text { text: "Shut Down"; color: white; font-size: 18px; horizontal-alignment: center; }
+            spacing: 8px; alignment: center;
+            Text { text: "⏻"; color: white; font-size: 28px; horizontal-alignment: center; }
+            Text { text: "Shut Down"; color: white; font-size: 14px; horizontal-alignment: center; }
         }
-        // Other...
         VerticalBox {
-            spacing: 10px;
-            alignment: center;
-            Text { text: "⌨"; color: white; font-size: 32px; font-weight: 100; horizontal-alignment: center; }
-            Text { text: "Other..."; color: white; font-size: 18px; horizontal-alignment: center; }
+            spacing: 8px; alignment: center;
+            Text { text: "⌨"; color: white; font-size: 28px; horizontal-alignment: center; }
+            Text { text: "Other..."; color: white; font-size: 14px; horizontal-alignment: center; }
         }
     }
 
-    // Bottom Right: User & Session Changers
-    HorizontalBox {
+    // Bottom Right: Session Changer (Fixed Height)
+    Rectangle {
         x: parent.width - self.width - 40px;
         y: parent.height - self.height - 40px;
-        spacing: 25px;
-        alignment: end;
+        width: 180px;
+        height: 60px; // Explicitly constrained height
 
         VerticalBox {
-            spacing: 8px;
-            Text { text: "Session"; color: white; font-size: 16px; }
+            spacing: 4px;
+            Text { text: "Session"; color: white; font-size: 14px; }
             ComboBox {
-                width: 160px;
+                height: 32px; // Explicit height for ComboBox
                 model: root.sessions;
                 current-value: root.selected-session;
                 selected(val) => { root.selected-session = val; }
-            }
-        }
-
-        VerticalBox {
-            spacing: 8px;
-            Text { text: "User"; color: white; font-size: 16px; }
-            ComboBox {
-                width: 160px;
-                model: root.users;
-                current-value: root.selected-user;
-                selected(val) => { root.selected-user = val; }
             }
         }
     }

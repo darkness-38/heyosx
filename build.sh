@@ -205,14 +205,13 @@ build_rust() {
     if [[ ! -f "$bin_path" ]] || $CLEAN; then
         needs_build=true
     elif [[ -n "$sync_out" ]]; then
-        # We only care if an actual file was modified (>f...c...) or added (>f+++++), or deleted (*deleting).
+        # We only care if an actual file was modified, added, or deleted.
+        # rsync -i codes: >f (file transfer), *deleting (deletion)
         local significant_changes
-        significant_changes=$(echo "$sync_out" | grep -E "^(>f.*c|>f\+.*|\*deleting)" && echo "yes" || echo "no")
+        significant_changes=$(echo "$sync_out" | grep -E "^(>f|\*deleting)" && echo "yes" || echo "no")
         
         if [[ "$significant_changes" == "yes" ]]; then
-            log "Changes detected in ${name} source files:"
-            echo "$sync_out" | grep -E "^(>f.*c|>f\+.*|\*deleting)" | awk '{print "  " $2}' | head -n 5 | tee -a "$BUILD_LOG"
-            [[ $(echo "$sync_out" | grep -E "^(>f.*c|>f\+.*|\*deleting)" | wc -l) -gt 5 ]] && log "  ...and more."
+            log "Significant changes detected in ${name} source files."
             needs_build=true
         fi
     fi
@@ -385,6 +384,9 @@ find "$SCRIPT_DIR/airootfs" -type f \( -name '*.conf' -o -name '*.sh' -o -name '
     -o -name 'os-release' -o -name 'issue' \) \
     -exec dos2unix -q {} + 2>/dev/null || true
 
+# Ensure UI and source files have Unix line endings (critical for Slint/Rust on Linux)
+find "$SCRIPT_DIR/heygreeter" "$SCRIPT_DIR/heydm" -type f \( -name '*.slint' -o -name '*.rs' \) \
+    -exec dos2unix -q {} + 2>/dev/null || true
 log "Running mkarchiso..."
 mkarchiso -v -w "$WORK_DIR" -o "$OUTPUT_DIR" "$SCRIPT_DIR" \
     2>&1 | tee -a "$BUILD_LOG"

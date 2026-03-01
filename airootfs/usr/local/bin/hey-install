@@ -56,12 +56,55 @@ display_grid() {
     local count=0
     for item in "${items[@]}"; do
         printf "%-${col_width}s" "$item"
-        ((count++))
+        ((count+=1))
         if [[ $((count % cols)) -eq 0 ]]; then
             echo ""
         fi
     done
     echo ""
+}
+
+# Helper: find best match for a string in a list
+# Returns 0 and prints match if found, returns 1 otherwise
+fuzzy_match() {
+    local input="$1"
+    shift
+    local items=("$@")
+    local match=""
+
+    # 1. Exact match (case-sensitive)
+    for i in "${items[@]}"; do
+        if [[ "$i" == "$input" ]]; then
+            echo "$i"
+            return 0
+        fi
+    done
+
+    # 2. Case-insensitive exact match
+    for i in "${items[@]}"; do
+        if [[ "${i,,}" == "${input,,}" ]]; then
+            echo "$i"
+            return 0
+        fi
+    done
+
+    # 3. Starts with (case-insensitive)
+    for i in "${items[@]}"; do
+        if [[ "${i,,}" == "${input,,}"* ]]; then
+            echo "$i"
+            return 0
+        fi
+    done
+
+    # 4. Contains (case-insensitive)
+    for i in "${items[@]}"; do
+        if [[ "${i,,}" == *"${input,,}"* ]]; then
+            echo "$i"
+            return 0
+        fi
+    done
+
+    return 1
 }
 
 # Prompt the user with a question, return 0 for yes
@@ -196,6 +239,7 @@ select_localization() {
     log_step "Localization Setup"
 
     # Timezone
+    mapfile -t tz_list < <(find /usr/share/zoneinfo -maxdepth 2 -type f -not -name "*.tab" -not -name "posix*" -not -name "right*" | sed 's|/usr/share/zoneinfo/||' | sort)
     while true; do
         echo -e "\n${BOLD}Timezone Setup:${NC}"
         echo "Enter 'list' to see all available timezones in a grid."
@@ -204,21 +248,29 @@ select_localization() {
         
         if [[ "$tz_input" == "list" ]]; then
             echo -e "\n${CYAN}Available Timezones:${NC}"
-            mapfile -t tz_list < <(find /usr/share/zoneinfo -maxdepth 2 -type f -not -name "*.tab" -not -name "posix*" -not -name "right*" | sed 's|/usr/share/zoneinfo/||' | sort)
             display_grid "${tz_list[@]}"
             continue
         fi
 
         [[ -z "$tz_input" ]] && break
+        
         if [[ -f "/usr/share/zoneinfo/$tz_input" ]]; then
             SELECTED_TIMEZONE="$tz_input"
             break
         else
+            # Try fuzzy match
+            best_match=$(fuzzy_match "$tz_input" "${tz_list[@]}") || true
+            if [[ -n "$best_match" ]]; then
+                log_info "Autocorrected '$tz_input' to '$best_match'"
+                SELECTED_TIMEZONE="$best_match"
+                break
+            fi
             log_err "Invalid timezone '$tz_input'."
         fi
     done
 
     # Keymap
+    mapfile -t key_list < <(localectl list-keymaps 2>/dev/null || find /usr/share/kbd/keymaps -type f -name "*.map.gz" -printf "%f\n" | sed 's/.map.gz//' | sort)
     while true; do
         echo -e "\n${BOLD}Keyboard Layout:${NC}"
         echo "Enter 'list' to see all available layouts in a grid."
@@ -227,17 +279,29 @@ select_localization() {
 
         if [[ "$key_input" == "list" ]]; then
             echo -e "\n${CYAN}Available Layouts:${NC}"
-            mapfile -t key_list < <(localectl list-keymaps 2>/dev/null || find /usr/share/kbd/keymaps -type f -name "*.map.gz" -printf "%f\n" | sed 's/.map.gz//' | sort)
             display_grid "${key_list[@]}"
             continue
         fi
 
         [[ -z "$key_input" ]] && break
-        SELECTED_KEYMAP="$key_input"
-        break
+        
+        # Check if exists or fuzzy match
+        if [[ " ${key_list[*]} " == *" $key_input "* ]]; then
+            SELECTED_KEYMAP="$key_input"
+            break
+        else
+            best_match=$(fuzzy_match "$key_input" "${key_list[@]}") || true
+            if [[ -n "$best_match" ]]; then
+                log_info "Autocorrected '$key_input' to '$best_match'"
+                SELECTED_KEYMAP="$best_match"
+                break
+            fi
+            log_err "Invalid layout '$key_input'."
+        fi
     done
 
     # Locale
+    mapfile -t loc_list < <(grep -E "^[a-z]{2}_[A-Z]{2}" /usr/share/i18n/SUPPORTED 2>/dev/null | awk '{print $1}')
     while true; do
         echo -e "\n${BOLD}System Locale:${NC}"
         echo "Enter 'list' to see all available locales in a grid."
@@ -245,16 +309,26 @@ select_localization() {
         read -r loc_input
 
         if [[ "$loc_input" == "list" ]]; then
-            echo -e "\n${CYAN}Available Locales (Common):${NC}"
-            mapfile -t loc_list < <(grep -E "^#[a-z]{2}_[A-Z]{2}" /etc/locale.gen | sed 's/^#//' | awk '{print $1}' | head -n 100)
+            echo -e "\n${CYAN}Available Locales:${NC}"
             display_grid "${loc_list[@]}"
-            echo "... (and many more in /etc/locale.gen)"
             continue
         fi
 
         [[ -z "$loc_input" ]] && break
-        SELECTED_LOCALE="$loc_input"
-        break
+        
+        # Check if exists or fuzzy match
+        if [[ " ${loc_list[*]} " == *" $loc_input "* ]]; then
+            SELECTED_LOCALE="$loc_input"
+            break
+        else
+            best_match=$(fuzzy_match "$loc_input" "${loc_list[@]}") || true
+            if [[ -n "$best_match" ]]; then
+                log_info "Autocorrected '$loc_input' to '$best_match'"
+                SELECTED_LOCALE="$best_match"
+                break
+            fi
+            log_err "Invalid locale '$loc_input'."
+        fi
     done
 
     log_ok "Localization configured: $SELECTED_TIMEZONE, $SELECTED_KEYMAP, $SELECTED_LOCALE"
