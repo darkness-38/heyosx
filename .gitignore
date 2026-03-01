@@ -22,3 +22,8 @@ build_log.txt
 
 # Temporary images
 *.png
+photos/
+/photos/
+
+# AI
+.gemini/

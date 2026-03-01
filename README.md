@@ -1,85 +1,135 @@
-# 🌸 heyOS
+# <p align="center">✨ heyOS ✨</p>
 
-heyOS is a custom, high-end Arch Linux-based distribution featuring a proprietary Rust-based graphics stack. It is designed for users who want a modern, "End-4" inspired aesthetic out of the box, with a focus on speed, automation, and a deep pink visual identity.
-
-## ✨ Key Features
-
-- **Custom Wayland Stack**: Built with Rust and Smithay, bypassing traditional desktop environments for a lightweight, performant experience.
-- **"End-4" Aesthetic**: Island-style UI modules, floating panels, and a grid-based application launcher.
-- **Pink Branding**: A consistent visual identity across terminal scripts, the installer, and the desktop UI.
-- **Production-Ready Installer**: A robust CLI installer that handles everything from partitioning to deploying the custom desktop.
-- **Diagnostic-Ready**: Built-in Memtest86+ integration in both live and installed boot menus.
+<p align="center">
+  <img src="https://img.shields.io/badge/OS-Arch_Linux-blue?style=for-the-badge&logo=arch-linux" alt="Arch Linux">
+  <img src="https://img.shields.io/badge/Language-Rust-orange?style=for-the-badge&logo=rust" alt="Rust">
+  <img src="https://img.shields.io/badge/UI-Slint-blueviolet?style=for-the-badge" alt="Slint">
+  <img src="https://img.shields.io/badge/Display_Protocol-Wayland-green?style=for-the-badge&logo=wayland" alt="Wayland">
+  <img src="https://img.shields.io/badge/License-GPL--3.0-red?style=for-the-badge" alt="License">
+</p>
 
 ---
 
-## 🏗️ Project Architecture
+**heyOS** is a meticulously crafted, custom Linux distribution built on the robust foundation of **Arch Linux**. It redefines the desktop experience by replacing traditional desktop environments with a bespoke **Wayland stack** written entirely in **Rust**. 
 
-### 1. heyDM (The Compositor)
-Located in `heydm/`, this is the heart of the desktop. Built using the [Smithay](https://github.com/Smithay/smithay) framework.
-- **Island UI**: Features a floating top bar with distinct modules for system status and workspaces.
-- **Grid Launcher**: A modern, searchable application grid (Super+D) that dynamically detects installed `.desktop` files.
-- **Robust Rendering**: Supports both hardware-accelerated OpenGL (Glow) and a Pixman-based **software rendering fallback** for VMs (like VMware) without 3D support.
-- **Tiling Logic**: Efficient window management with thick, vibrant crimson/pink borders for focused windows.
-
-### 2. hey-greeter (The Login Manager)
-Located in `heygreeter/`, this provides a high-end login experience.
-- **UI Engine**: Built with [Slint](https://slint.dev/) for smooth animations and modern "glassmorphism" effects.
-- **Live Diagnostics**: Features a real-time digital clock and date display updated via a backend Rust timer.
-- **User & Session Management**: Dynamically scans `/etc/passwd` for real users and `/usr/share/wayland-sessions` for available environments.
-- **Secure Auth**: Uses `greetd` IPC and `shlex` for safe, robust session spawning.
-
-### 3. hey-install (The OS Installer)
-Located in `airootfs/usr/local/bin/hey-install`, this is the pink-themed CLI gateway to heyOS.
-- **Safety First**: Explicitly validates hardware requirements (UEFI) and binary integrity before starting.
-- **Flexible Partitioning**: Supports both standard `ext4` and modern `btrfs` (with subvolume support).
-- **Offline-Optimized**: Can utilize a local package cache on the ISO to speed up installations in low-bandwidth environments.
+At its core, heyOS is designed for speed, modern aesthetics, and technical transparency. It features a custom compositor, a beautiful login manager, and a streamlined installation process.
 
 ---
 
-## 🛠️ Build System
+## 🏗️ Core Architecture
 
-The root directory contains an optimized `build.sh` script designed for rapid development.
+heyOS is built as a modular ecosystem where each component handles a specific part of the user journey:
 
-### Specialized Build Flags
-For faster testing, you can build specialized ISOs that isolate specific components:
-- `sudo bash build.sh --greeter-only`: Builds an ISO that launches directly into the login screen for UI testing.
-- `sudo bash build.sh --heydm-only`: Builds an ISO that bypasses the greeter and launches the desktop directly.
-- `sudo bash build.sh --clean`: Wipes all caches for a fresh production release.
+```mermaid
+graph TD
+    A[BIOS/UEFI] --> B[GRUB / Systemd-Boot]
+    B --> C[Linux Kernel]
+    C --> D[greetd Service]
+    D --> E[hey-greeter]
+    E -- Login Success --> F[heyDM Compositor]
+    F --> G[Wayland Apps]
+    F --> H[XWayland Apps]
+    F --> I[Integrated Panel & Launcher]
+```
 
-### Optimization Details
-- **Rsync Checksums**: The build system uses checksum-based synchronization to prevent false-positive Rust recompiles when building from Windows/WSL mounts.
-- **Lockfile Preservation**: Intelligently preserves `Cargo.lock` in the native Linux build environment to maintain dependency stability.
-- **LZ4 Compression**: The ISO uses high-speed LZ4 compression for the SquashFS image, ensuring fast boot times.
+---
+
+## 💎 Key Components
+
+| Component | Role | Technology Stack | Description |
+| :--- | :--- | :--- | :--- |
+| **`heydm`** | Display Manager / Compositor | `Rust`, `Smithay`, `Calloop` | A custom Wayland compositor that manages windows, renders a system panel, and provides a built-in application launcher. |
+| **`hey-greeter`** | Login Interface | `Rust`, `Slint`, `greetd-ipc` | A visually stunning, modern login screen that handles user authentication via PAM. |
+| **`hey-install`** | System Installer | `Bash`, `Arch-Install-Scripts` | An interactive CLI installer that automates disk partitioning, filesystem setup (ext4/btrfs), and system deployment. |
+| **`build.sh`** | Build System | `Bash`, `Archiso` | A sophisticated build script that compiles the Rust stack and packages everything into a bootable ISO. |
 
 ---
 
 ## 🚀 Getting Started
 
-### Building the ISO
-1. Boot into an **Arch Linux** host (or WSL2 with Arch).
-2. Ensure `rsync` and `archiso` are installed.
-3. Run the master script:
-   ```bash
-   sudo bash build.sh
-   ```
-4. The final image will be available in `out/heyOS-xxxx.iso`.
+### 1. Build the ISO
+To build heyOS, you need an Arch Linux environment. The build script automates everything from dependency resolution to Rust compilation.
 
-### Installation
-1. Boot the ISO.
-2. Connect to the internet (`nmcli` or `iwd`).
-3. Launch the installer:
-   ```bash
-   sudo hey-install
-   ```
-4. Follow the pink prompts, reboot, and enjoy heyOS.
+```bash
+# Clone the repository
+git clone https://github.com/heyos-project/heyos.git
+cd heyos
+
+# Run the master build script (requires sudo for mkarchiso)
+sudo ./build.sh
+```
+
+**Advanced Build Features:**
+* ⚡ **Native Relocation:** Automatically detects if it's running on a slow mount (like WSL/Windows) and relocates to a native Linux filesystem for 10x faster build speeds.
+* 📦 **Incremental Caching:** Intelligent `rsync` and `cargo` cache management ensures that only modified components are rebuilt.
+* 🌐 **Offline Caching:** Pre-downloads and caches all installer packages into the ISO for reliable offline installations.
+* 🛠️ **Testing Flags:** Use `--greeter-only` or `--heydm-only` to bypass parts of the boot process for rapid UI/Compositor iteration.
+
+### 2. Installation
+Once you boot the ISO, you will be greeted by the live environment. To install heyOS to your disk, simply run:
+
+```bash
+sudo hey-install
+```
+
+The installer will guide you through:
+- 🌏 **Localization:** Timezone, Keymap, and Locale selection.
+- 💾 **Partitioning:** Automatic GPT/MBR setup with UEFI support.
+- 📂 **Filesystems:** Choice between **ext4** or **btrfs** (with subvolume optimization).
+- 👤 **User Setup:** Root and primary user creation with appropriate permissions.
 
 ---
 
-## 🎨 Customization
+## 🛠️ Technical Deep Dive
 
-- **Colors**: Modify `heydm/src/render.rs` (compositor) or `heygreeter/ui/greeter.slint` (login screen).
-- **Packages**: Add your favorite software to `packages.x86_64`.
-- **System Tweaks**: Add files to `airootfs/` to have them persist in every build.
+### `heydm` — The Compositor
+Built using the [Smithay](https://github.com/Smithay/smithay) framework, `heydm` is more than just a window manager. It implements:
+- **Rendering:** Optimized rendering using `glow` (OpenGL) and `pixman` fallbacks.
+- **Input:** Seamless handling via `libinput`.
+- **Shell:** Support for `xdg-shell` and `layer-shell` protocols.
+- **Panel:** A native Rust-rendered panel using `tiny-skia` and `fontdue`.
 
-## ⚖️ License
-GPL-3.0 - heyOS Project
+### `hey-greeter` — The UI
+The login screen leverages the **Slint UI** framework to achieve a fluid, hardware-accelerated interface.
+- **Integration:** Communicates with `greetd` via JSON-RPC over Unix sockets.
+- **Security:** Secure PAM authentication handling.
+- **Aesthetics:** Declarative UI design for pixel-perfect layouts.
+
+---
+
+## 📦 Project Structure
+
+```text
+.
+├── airootfs/            # Filesystem overlay for the Live ISO
+│   ├── etc/             # System configurations (greetd, sudoers, etc.)
+│   └── usr/local/bin/   # Custom heyOS scripts (hey-install)
+├── heydm/               # Custom Wayland Compositor (Rust)
+│   ├── src/             # Smithay-based compositor logic
+│   └── Cargo.toml
+├── heygreeter/          # Login Manager UI (Rust + Slint)
+│   ├── ui/              # Slint declarative UI files
+│   └── src/             # Greetd IPC and PAM logic
+├── build.sh             # Master build orchestration script
+├── packages.x86_64      # Core package list for the distribution
+└── profiledef.sh        # Archiso profile configuration
+```
+
+---
+
+## 🤝 Contributing
+
+We welcome contributions to any part of the stack! 
+1. **Compositor:** Help us improve `heydm` window management or protocol support.
+2. **UI:** Enhance the `hey-greeter` aesthetics or add new themes.
+3. **Installer:** Improve hardware detection or add support for more filesystems.
+
+---
+
+## 📜 License
+
+heyOS is released under the **GPL-3.0 License**. See the `LICENSE` file for more details.
+
+<p align="center">
+  Built with ❤️ by the <b>heyOS Project</b>
+</p>

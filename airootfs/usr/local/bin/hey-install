@@ -24,6 +24,9 @@ NC='\033[0m' # No Color
 # ---- Configuration ----
 MOUNT_POINT="/mnt"
 LOG_FILE="/var/log/hey-install.log"
+SELECTED_TIMEZONE="UTC"
+SELECTED_LOCALE="en_US.UTF-8"
+SELECTED_KEYMAP="us"
 
 # =============================================================================
 # Utility Functions
@@ -33,7 +36,33 @@ log_info()  { echo -e "${BLUE}[INFO]${NC}  $*" | tee -a "$LOG_FILE"; }
 log_ok()    { echo -e "${GREEN}[OK]${NC}    $*" | tee -a "$LOG_FILE"; }
 log_warn()  { echo -e "${YELLOW}[WARN]${NC}  $*" | tee -a "$LOG_FILE"; }
 log_err()   { echo -e "${RED}[ERROR]${NC} $*" | tee -a "$LOG_FILE"; }
-log_step()  { echo -e "\n${CYAN}${BOLD}==> $*${NC}" | tee -a "$LOG_FILE"; }
+log_step()  { echo -e "\n${PINK}${BOLD}==> $*${NC}" | tee -a "$LOG_FILE"; }
+
+# Display a list of items in a compact grid format
+display_grid() {
+    local items=("$@")
+    local term_width=$(tput cols 2>/dev/null || echo 80)
+    local max_len=0
+    
+    for item in "${items[@]}"; do
+        [[ ${#item} -gt $max_len ]] && max_len=${#item}
+    done
+    
+    local col_width=$((max_len + 2))
+    local cols=$((term_width / col_width))
+    [[ $cols -lt 1 ]] && cols=1
+    
+    # Use printf to create the grid
+    local count=0
+    for item in "${items[@]}"; do
+        printf "%-${col_width}s" "$item"
+        ((count++))
+        if [[ $((count % cols)) -eq 0 ]]; then
+            echo ""
+        fi
+    done
+    echo ""
+}
 
 # Prompt the user with a question, return 0 for yes
 confirm() {
@@ -157,6 +186,78 @@ select_filesystem() {
     done
 
     log_ok "Filesystem: $ROOT_FS"
+}
+
+# =============================================================================
+# Localization Selection
+# =============================================================================
+
+select_localization() {
+    log_step "Localization Setup"
+
+    # Timezone
+    while true; do
+        echo -e "\n${BOLD}Timezone Setup:${NC}"
+        echo "Enter 'list' to see all available timezones in a grid."
+        echo -en "${BOLD}Enter timezone [${SELECTED_TIMEZONE}]: ${NC}"
+        read -r tz_input
+        
+        if [[ "$tz_input" == "list" ]]; then
+            echo -e "\n${CYAN}Available Timezones:${NC}"
+            mapfile -t tz_list < <(find /usr/share/zoneinfo -maxdepth 2 -type f -not -name "*.tab" -not -name "posix*" -not -name "right*" | sed 's|/usr/share/zoneinfo/||' | sort)
+            display_grid "${tz_list[@]}"
+            continue
+        fi
+
+        [[ -z "$tz_input" ]] && break
+        if [[ -f "/usr/share/zoneinfo/$tz_input" ]]; then
+            SELECTED_TIMEZONE="$tz_input"
+            break
+        else
+            log_err "Invalid timezone '$tz_input'."
+        fi
+    done
+
+    # Keymap
+    while true; do
+        echo -e "\n${BOLD}Keyboard Layout:${NC}"
+        echo "Enter 'list' to see all available layouts in a grid."
+        echo -en "${BOLD}Enter layout [${SELECTED_KEYMAP}]: ${NC}"
+        read -r key_input
+
+        if [[ "$key_input" == "list" ]]; then
+            echo -e "\n${CYAN}Available Layouts:${NC}"
+            mapfile -t key_list < <(localectl list-keymaps 2>/dev/null || find /usr/share/kbd/keymaps -type f -name "*.map.gz" -printf "%f\n" | sed 's/.map.gz//' | sort)
+            display_grid "${key_list[@]}"
+            continue
+        fi
+
+        [[ -z "$key_input" ]] && break
+        SELECTED_KEYMAP="$key_input"
+        break
+    done
+
+    # Locale
+    while true; do
+        echo -e "\n${BOLD}System Locale:${NC}"
+        echo "Enter 'list' to see all available locales in a grid."
+        echo -en "${BOLD}Enter locale (e.g., en_US.UTF-8, de_DE.UTF-8) [${SELECTED_LOCALE}]: ${NC}"
+        read -r loc_input
+
+        if [[ "$loc_input" == "list" ]]; then
+            echo -e "\n${CYAN}Available Locales (Common):${NC}"
+            mapfile -t loc_list < <(grep -E "^#[a-z]{2}_[A-Z]{2}" /etc/locale.gen | sed 's/^#//' | awk '{print $1}' | head -n 100)
+            display_grid "${loc_list[@]}"
+            echo "... (and many more in /etc/locale.gen)"
+            continue
+        fi
+
+        [[ -z "$loc_input" ]] && break
+        SELECTED_LOCALE="$loc_input"
+        break
+    done
+
+    log_ok "Localization configured: $SELECTED_TIMEZONE, $SELECTED_KEYMAP, $SELECTED_LOCALE"
 }
 
 # =============================================================================
@@ -372,21 +473,23 @@ user = "greeter"
 EOF
 
     # ---- Chroot configuration ----
-    cat << 'CHROOT_SCRIPT' > "$MOUNT_POINT/root/hey-setup.sh"
+    cat << CHROOT_SCRIPT > "$MOUNT_POINT/root/hey-setup.sh"
 #!/bin/bash
 set -e
 
 # Timezone
-ln -sf /usr/share/zoneinfo/UTC /etc/localtime
+ln -sf /usr/share/zoneinfo/${SELECTED_TIMEZONE} /etc/localtime
 hwclock --systohc
 
 # Locale
-echo "en_US.UTF-8 UTF-8" > /etc/locale.gen
+# Ensure the locale string is handled correctly for locale.gen
+CHARSET=\$(echo "${SELECTED_LOCALE}" | cut -d. -f2)
+echo "${SELECTED_LOCALE} \${CHARSET:-UTF-8}" > /etc/locale.gen
 locale-gen
-echo "LANG=en_US.UTF-8" > /etc/locale.conf
+echo "LANG=${SELECTED_LOCALE}" > /etc/locale.conf
 
 # Vconsole
-echo "KEYMAP=us" > /etc/vconsole.conf
+echo "KEYMAP=${SELECTED_KEYMAP}" > /etc/vconsole.conf
 
 # Hostname
 echo "heyOS" > /etc/hostname
@@ -537,6 +640,7 @@ main() {
     echo "Started: $(date)" >> "$LOG_FILE"
     select_disk
     select_filesystem
+    select_localization
     partition_disk
     format_partitions
     mount_filesystems
