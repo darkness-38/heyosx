@@ -333,19 +333,15 @@ impl AppLauncher {
 
     /// Handle a click on the launcher overlay
     /// Returns Some(exec_command) if an app was selected, None otherwise
-    pub fn handle_click(&self, x: f64, y: f64) -> Option<String> {
+    pub fn handle_click(&self, x: f64, y: f64, output_w: u32, output_h: u32) -> Option<String> {
         if !self.visible {
             return None;
         }
 
-        // Calculate launcher geometry (must match renderer)
-        let output_w = 1920; // These would ideally be passed in
-        let output_h = 1080;
-
-        let launcher_w = 800.min(output_w - 100);
-        let launcher_h = 600.min(output_h - 200);
-        let launcher_x = (output_w - launcher_w) / 2;
-        let launcher_y = (output_h - launcher_h) / 2;
+        let launcher_w = 800.min(output_w.saturating_sub(100));
+        let launcher_h = 600.min(output_h.saturating_sub(200));
+        let launcher_x = (output_w.saturating_sub(launcher_w)) / 2;
+        let launcher_y = (output_h.saturating_sub(launcher_h)) / 2;
 
         if x < launcher_x as f64 || x > (launcher_x + launcher_w) as f64 || y < launcher_y as f64 || y > (launcher_y + launcher_h) as f64 {
             return None;
@@ -365,11 +361,11 @@ impl AppLauncher {
         let col = ((x - (launcher_x as f64 + 30.0)) / item_w as f64) as i32;
         let row = ((y - items_start_y as f64) / item_h as f64) as i32;
         
-        if col < 0 || col >= cols || row < 0 || row >= 3 {
+        if col < 0 || col >= cols as i32 || row < 0 || row >= 3 {
             return None; // outside grid
         }
         
-        let clicked_idx = (row * cols + col) as usize;
+        let clicked_idx = (row * cols as i32 + col) as usize;
 
         if let Some(&app_idx) = self.filtered.get(clicked_idx) {
             let exec = self.apps[app_idx].exec.clone();

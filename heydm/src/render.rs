@@ -95,8 +95,8 @@ impl Renderer {
                 &[rect(0, 0, output_size.w, output_size.h)],
             )?;
 
-            let lw = 800.min(output_size.w - 100);
-            let lh = 600.min(output_size.h - 200);
+            let lw = 800.min(output_size.w - 100).max(0);
+            let lh = 600.min(output_size.h - 200).max(0);
             let lx = (output_size.w - lw) / 2;
             let ly = (output_size.h - lh) / 2;
 

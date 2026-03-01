@@ -23,4 +23,6 @@ file_permissions=(
   ["/usr/local/bin/hey-install"]="0:0:755"
   ["/etc/shadow"]="0:0:400"
   ["/etc/gshadow"]="0:0:400"
+  ["/etc/greetd/config.toml"]="0:0:644"
+  ["/etc/sudoers.d/00-heyos"]="0:0:440"
 )

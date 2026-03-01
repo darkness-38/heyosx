@@ -98,7 +98,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let app_handle = app.as_weak();
     app.on_login(move |user, password, session| {
-        let app = app_handle.unwrap();
+        let Some(app) = app_handle.upgrade() else { return; };
         app.set_error_message("".into());
         info!("Attempting login for user: {}", user);
         

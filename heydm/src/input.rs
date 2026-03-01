@@ -226,8 +226,8 @@ impl InputHandler {
             }
 
             if state.launcher.is_visible() {
-                if let Some(app) = state.launcher.handle_click(cursor_pos.0, cursor_pos.1) {
-                    info!("Launching application: {}", app);
+                if let Some(app) = state.launcher.handle_click(cursor_pos.0, cursor_pos.1, state.output_size.w as u32, state.output_size.h as u32) {
+                    info!("Launching application: {}" , app);
                     if let Err(e) = std::process::Command::new(&app).spawn() {
                         tracing::warn!("Failed to launch {app}: {e}");
                     }

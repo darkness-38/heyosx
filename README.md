@@ -12,7 +12,16 @@
 
 **heyOS** is a meticulously crafted, custom Linux distribution built on the robust foundation of **Arch Linux**. It redefines the desktop experience by replacing traditional desktop environments with a bespoke **Wayland stack** written entirely in **Rust**. 
 
-At its core, heyOS is designed for speed, modern aesthetics, and technical transparency. It features a custom compositor, a beautiful login manager, and a streamlined installation process.
+At its core, heyOS is designed for speed, modern aesthetics, and technical transparency. It features a custom compositor, a beautiful hardware-accelerated login manager, and a streamlined installation process.
+
+---
+
+## 🌟 Project Highlights
+
+*   🦀 **Pure Rust Core:** High-performance Wayland compositor and UI built with safety and speed in mind.
+*   🎨 **Modern Aesthetics:** Fluid, hardware-accelerated greeter using the Slint UI framework.
+*   🧠 **Intelligent Installer:** CLI-based installation with fuzzy-matching autocorrect for localization.
+*   ⚡ **Optimized Build System:** Automated native-filesystem relocation for ultra-fast builds.
 
 ---
 

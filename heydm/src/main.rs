@@ -36,7 +36,10 @@ fn main() {
 
     // Determine which backend to use:
     //   - If WAYLAND_DISPLAY or DISPLAY is set, use winit (nested compositor for dev)
-    //   - Otherwise, use udev/DRM (direct hardware — production path)
+//   - Otherwise, use udev/DRM (direct hardware — production path)
+    // NOTE: For heyOS v0.1, heydm is designed to run nested under 'cage' 
+    // for DRM/udev management on bare metal. The internal udev path in 
+    // state.rs is currently a placeholder for future direct-to-hardware support.
     let use_winit = std::env::var("WAYLAND_DISPLAY").is_ok()
         || std::env::var("DISPLAY").is_ok();
 

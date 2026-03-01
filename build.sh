@@ -2,19 +2,7 @@
 # =============================================================================
 # heyOS — Master Build Script
 #
-# This script runs on an Arch Linux host to:
-#   1. Install build dependencies
-#   2. Compile the heyDM compositor (Rust → release binary)
-#   3. Deploy binaries into the airootfs overlay
-#   4. Set correct permissions
-#   5. Invoke mkarchiso to produce the final heyOS ISO
-#
-# Usage:  sudo bash build.sh [--clean] [--greeter-only] [--heydm-only]
-#   --clean         Force a full rebuild (wipe work dir and cargo cache)
-#   --greeter-only  Build ISO that launches hey-greeter immediately
-#   --heydm-only    Build ISO that launches heydm immediately (skipping greeter)
-#
-# Requirements: Arch Linux host with internet access
+# Optimized for speed, incremental builds, and WSL/Windows relocation.
 # =============================================================================
 
 set -euo pipefail
@@ -29,7 +17,10 @@ fi
 OUTPUT_DIR="${SCRIPT_DIR}/out"
 AIROOTFS="${SCRIPT_DIR}/airootfs"
 BUILD_TMP="/var/lib/heyos-cargo-build"
-JOBS=$(nproc 2>/dev/null || echo 4)
+# Calculate jobs for parallel compilation
+TOTAL_JOBS=$(nproc 2>/dev/null || echo 4)
+PARALLEL_JOBS=$(( TOTAL_JOBS / 2 ))
+[[ $PARALLEL_JOBS -lt 1 ]] && PARALLEL_JOBS=1
 
 # ---- Parse flags ----
 CLEAN=false
@@ -62,9 +53,7 @@ log()      { echo -e "${BLUE}[BUILD]${NC} $*" | tee -a "$BUILD_LOG"; }
 log_ok()   { echo -e "${GREEN}[OK]${NC}    $*" | tee -a "$BUILD_LOG"; }
 log_warn() { echo -e "${YELLOW}[SKIP]${NC}  $*" | tee -a "$BUILD_LOG"; }
 log_err()  { echo -e "${RED}[ERROR]${NC} $*" | tee -a "$BUILD_LOG"; }
-log_step() { echo -e "
-${CYAN}${BOLD}══════ $* ══════${NC}
-" | tee -a "$BUILD_LOG"; }
+log_step() { echo -e "\n${CYAN}${BOLD}══════ $* ══════${NC}\n" | tee -a "$BUILD_LOG"; }
 
 # Track total build time
 BUILD_START=$SECONDS
@@ -105,18 +94,17 @@ fi
 # Auto-relocate to native Linux filesystem for speed
 # =============================================================================
 NATIVE_BUILD_DIR="/var/lib/heyos-build"
-# Track original Windows path so we can copy the ISO back at the end
 WINDOWS_SRC="${WINDOWS_SRC:-}"
 
 if [[ "$SCRIPT_DIR" == /mnt/* ]]; then
-    # Ensure rsync is available for the copy
     pacman -S --needed --noconfirm rsync &>/dev/null || true
 
-    log "Detected Windows mount ($SCRIPT_DIR) — copying to native Linux filesystem..."
+    log "Detected Windows mount ($SCRIPT_DIR) — syncing to native Linux filesystem..."
     mkdir -p "$NATIVE_BUILD_DIR"
-    # rsync the project (exclude work dir and output to save time)
-    # We use --checksum here because Windows/mnt timestamps are often unreliable
-    rsync -ac --delete \
+    
+    # RELOCATION OPTIMIZATION: Archive mode includes timestamps (-t). 
+    # This is much faster than checksums for initial sync.
+    rsync -a --delete \
         --exclude='work/' \
         --exclude='out/' \
         --exclude='pkg-cache/' \
@@ -137,117 +125,109 @@ if $CLEAN; then
     rm -rf "$BUILD_TMP" "${SCRIPT_DIR}/work" "${SCRIPT_DIR}/pkg-cache" "${AIROOTFS}/opt/heyos-packages"
 fi
 
+# PRE-BUILD CLEANUP: Delete any existing ISOs in the local Linux output directory
+# This ensures we don't accidentally move an old version.
+log "Cleaning local output directory..."
+rm -f "${OUTPUT_DIR}"/*.iso
+
 # =============================================================================
-# Step 1: Install Build Dependencies (single pacman call)
+# Step 1: Install Build Dependencies
 # =============================================================================
 
-log_step "Step 1: Installing build dependencies"
+log_step "Step 1: Verifying build dependencies"
 
-# Single pacman call: sync DBs + install everything (--needed skips what's current)
-pacman -Sy --needed --noconfirm \
-    archlinux-keyring \
-    archiso \
-    rustup \
-    git \
-    base-devel \
-    wayland \
-    wayland-protocols \
-    libxkbcommon \
-    libinput \
-    seatd \
-    mesa \
-    pam \
-    pkg-config \
-    syslinux \
-    dos2unix \
-    lz4 \
-    fontconfig \
-    pixman \
-    libdrm \
-    noto-fonts
-    2>&1 | tee -a "$BUILD_LOG"
+# Only run pacman if dependencies are missing to save time
+MISSING_PKGS=""
+for pkg in archlinux-keyring archiso rustup git base-devel wayland wayland-protocols \
+           libxkbcommon libinput seatd mesa pam pkg-config syslinux dos2unix lz4 \
+           fontconfig pixman libdrm noto-fonts; do
+    if ! pacman -Qi "$pkg" &>/dev/null; then
+        MISSING_PKGS+="$pkg "
+    fi
+done
 
-# Ensure Rust toolchain is properly configured
-log "Ensuring Rust stable toolchain is configured..."
+if [[ -n "$MISSING_PKGS" ]]; then
+    log "Installing missing dependencies: $MISSING_PKGS"
+    pacman -Sy --needed --noconfirm $MISSING_PKGS 2>&1 | tee -a "$BUILD_LOG"
+else
+    log_ok "All build dependencies are already installed."
+fi
+
 rustup default stable 2>&1 | tee -a "$BUILD_LOG"
-
-RUSTC_VERSION=$(rustc --version 2>/dev/null || echo "unknown")
-log_ok "Rust: $RUSTC_VERSION"
-log_ok "Build dependencies installed"
+log_ok "Build environment ready"
 
 # =============================================================================
-# Step 2 & 3: Compile Rust Projects (with incremental build cache)
+# Step 2 & 3: Compile Rust Projects (PARALLELIZED)
 # =============================================================================
 
-# Helper: build a Rust project, skip if binary is newer than all source files
-# Usage: build_rust <name> <source_dir>
+# Helper: build a Rust project
 build_rust() {
     local name="$1"
     local dir_name="$2"
     local bin_name="${3:-$2}"
+    local parallel="${4:-false}"
     local src_dir="${SCRIPT_DIR}/${dir_name}"
     local build_dir="${BUILD_TMP}/${dir_name}"
     local bin_path="${build_dir}/target/release/${bin_name}"
 
-    log_step "Compiling ${name}"
-
+    log "Checking ${name}..."
     mkdir -p "$build_dir"
 
-    # 1. Sync source to build directory (native filesystem)
-    # We use -i (itemize-changes) and -c (checksum) to see exactly what files were updated.
-    # We exclude 'target/' and 'Cargo.lock' from deletion to preserve the cargo build cache.
-    log "Syncing ${name} source..."
-    local sync_out
-    sync_out=$(rsync -aic --delete --exclude='target/' --exclude='Cargo.lock' "$src_dir/" "$build_dir/")
+    # Sync source using timestamps (-a) instead of checksums for speed
+    rsync -a --delete --exclude='target/' "$src_dir/" "$build_dir/"
 
-    # 2. Check if we really need to run cargo
-    local needs_build=false
-    if [[ ! -f "$bin_path" ]] || $CLEAN; then
-        needs_build=true
-    elif [[ -n "$sync_out" ]]; then
-        # We only care if an actual file was modified, added, or deleted.
-        # rsync -i codes: >f (file transfer), *deleting (deletion)
-        local significant_changes
-        significant_changes=$(echo "$sync_out" | grep -E "^(>f|\*deleting)" && echo "yes" || echo "no")
-        
-        if [[ "$significant_changes" == "yes" ]]; then
-            log "Significant changes detected in ${name} source files."
-            needs_build=true
-        fi
+    cd "$build_dir"
+    # Assign unique TMPDIR to prevent parallel build race conditions
+    export TMPDIR="${build_dir}/tmp"
+    mkdir -p "$TMPDIR"
+    
+    # Run cargo
+    # If parallel, limit jobs to avoid system freezing
+    local jobs_flag=""
+    if $parallel; then
+        jobs_flag="-j ${PARALLEL_JOBS}"
     fi
 
-    if $needs_build; then
-        cd "$build_dir"
-        log "Running cargo build --release for ${name}..."
-        export TMPDIR="${BUILD_TMP}/tmp"
-        mkdir -p "$TMPDIR"
-        cargo build --release 2>&1 | tee -a "$BUILD_LOG"
-
-        if [[ ! -f "$bin_path" ]]; then
-            log_err "${name} build failed — binary not found"
-            exit 1
-        fi
-
-        local size
-        size=$(du -h "$bin_path" | cut -f1)
-        log_ok "${name} compiled successfully (${size})"
-    else
-        local size
-        size=$(du -h "$bin_path" | cut -f1)
-        log_warn "${name} unchanged — reusing cached binary (${size})"
+    # Use a subshell to capture output and prefix it for clarity if parallel
+    if ! cargo build --release ${jobs_flag} 2>&1 | sed "s/^/[${name}] /" | tee -a "$BUILD_LOG"; then
+        log_err "${name} build failed."
+        return 1
     fi
+
+    if [[ ! -f "$bin_path" ]]; then
+        log_err "${name} binary not found at $bin_path."
+        return 1
+    fi
+
+    log_ok "${name} ready."
+    return 0
 }
 
-if ! $GREETER_ONLY; then
-    build_rust "heyDM (Wayland compositor)" "heydm"
+log_step "Step 2 & 3: Compiling Rust components (Parallel: ${PARALLEL_JOBS} jobs/task)"
+
+# Launch builds in background if both are needed
+if ! $GREETER_ONLY && ! $HEYDM_ONLY; then
+    build_rust "heyDM" "heydm" "heydm" true &
+    PID_HEYDM=$!
+    build_rust "hey-greeter" "heygreeter" "hey-greeter" true &
+    PID_GREETER=$!
+    
+    wait "$PID_HEYDM" || { log_err "heyDM build failed"; exit 1; }
+    wait "$PID_GREETER" || { log_err "hey-greeter build failed"; exit 1; }
+else
+    # Sequential build if only one requested (use all cores)
+    if ! $GREETER_ONLY; then
+        build_rust "heyDM" "heydm" "heydm" false
+    fi
+    if ! $HEYDM_ONLY; then
+        build_rust "hey-greeter" "heygreeter" "hey-greeter" false
+    fi
 fi
 
-if ! $HEYDM_ONLY; then
-    build_rust "hey-greeter (Login Manager)" "heygreeter" "hey-greeter"
-fi
+log_ok "All Rust components compiled."
 
 # =============================================================================
-# Step 4: Deploy Binaries into airootfs
+# Step 4: Deploy Binaries
 # =============================================================================
 
 log_step "Step 4: Deploying binaries and configuring boot"
@@ -256,184 +236,161 @@ mkdir -p "${AIROOTFS}/usr/bin"
 mkdir -p "${AIROOTFS}/usr/local/bin"
 mkdir -p "${AIROOTFS}/etc/greetd"
 
+# Helper for greetd config
+write_greetd_config() {
+    local cmd="$1"
+    cat << EOF > "${AIROOTFS}/etc/greetd/config.toml"
+[terminal]
+vt = 1
+[default_session]
+command = "env WLR_RENDERER=pixman WLR_NO_HARDWARE_CURSORS=1 $cmd"
+user = "hey"
+EOF
+}
+
 if $GREETER_ONLY; then
-    log "Configuring ISO for GREETER-ONLY testing..."
     cp "${BUILD_TMP}/heygreeter/target/release/hey-greeter" "${AIROOTFS}/usr/bin/hey-greeter"
-    cat << EOF > "${AIROOTFS}/etc/greetd/config.toml"
-[terminal]
-vt = 1
-[default_session]
-command = "env WLR_RENDERER=pixman WLR_NO_HARDWARE_CURSORS=1 cage -s -- /usr/bin/hey-greeter"
-user = "hey"
-EOF
+    write_greetd_config "cage -s -- /usr/bin/hey-greeter"
 elif $HEYDM_ONLY; then
-    log "Configuring ISO for HEYDM-ONLY testing (skipping greeter)..."
     cp "${BUILD_TMP}/heydm/target/release/heydm" "${AIROOTFS}/usr/bin/heydm"
-    cat << EOF > "${AIROOTFS}/etc/greetd/config.toml"
-[terminal]
-vt = 1
-[default_session]
-command = "env WLR_RENDERER=pixman WLR_NO_HARDWARE_CURSORS=1 cage -s -- env WLR_RENDERER=pixman /usr/bin/heydm"
-user = "hey"
-EOF
+    write_greetd_config "cage -s -- /usr/bin/heydm"
 else
-    log "Deploying full system binaries..."
     cp "${BUILD_TMP}/heydm/target/release/heydm" "${AIROOTFS}/usr/bin/heydm"
     cp "${BUILD_TMP}/heygreeter/target/release/hey-greeter" "${AIROOTFS}/usr/bin/hey-greeter"
-    # Restore default greetd config
-    cat << EOF > "${AIROOTFS}/etc/greetd/config.toml"
-[terminal]
-vt = 1
-[default_session]
-command = "env WLR_RENDERER=pixman WLR_NO_HARDWARE_CURSORS=1 cage -s -- /usr/bin/hey-greeter"
-user = "hey"
-EOF
+    write_greetd_config "cage -s -- /usr/bin/hey-greeter"
 fi
 
-log_ok "Binaries deployed and boot configured"
+log_ok "Binaries deployed"
 
 # =============================================================================
-# Step 5: Set Permissions
+# Step 5: Set Permissions & Normalization
 # =============================================================================
 
-log_step "Step 5: Setting file permissions"
+log_step "Step 5: Permissions & File Normalization"
 
-if ! $HEYDM_ONLY; then
-    chmod 755 "${AIROOTFS}/usr/bin/hey-greeter"
-fi
-if ! $GREETER_ONLY; then
-    chmod 755 "${AIROOTFS}/usr/bin/heydm"
-fi
+chmod 755 "${AIROOTFS}/usr/bin/heydm" 2>/dev/null || true
+chmod 755 "${AIROOTFS}/usr/bin/hey-greeter" 2>/dev/null || true
 chmod 755 "${AIROOTFS}/usr/local/bin/hey-install"
 chmod 755 "${AIROOTFS}/root/customize_airootfs.sh"
-
-# Ensure sudoers has correct permissions
 chmod 440 "${AIROOTFS}/etc/sudoers.d/00-heyos" 2>/dev/null || true
 
-log_ok "Permissions set"
+# NORMALIZATION OPTIMIZATION: Only normalize relevant scripts and configs
+log "Normalizing line endings..."
+find "$SCRIPT_DIR" -maxdepth 1 \( -name '*.sh' -o -name 'packages.*' \) -exec dos2unix -q {} +
+find "$AIROOTFS" -type f \( -name '*.conf' -o -name '*.sh' -o -name 'hey-install' \) -exec dos2unix -q {} +
+
+log_ok "Permissions and normalization complete"
 
 # =============================================================================
-# Step 5.5: Cache offline installation packages
+# Step 5.5: Offline Caching (MD5 STAMPED)
 # =============================================================================
 
 log_step "Step 5.5: Caching offline installer packages"
 
 PKG_CACHE_DIR="${SCRIPT_DIR}/pkg-cache"
 ISO_PKG_DIR="${AIROOTFS}/opt/heyos-packages"
+PKG_STAMP="${PKG_CACHE_DIR}/.pkg_list_stamp"
 
 mkdir -p "${PKG_CACHE_DIR}"
 mkdir -p "${ISO_PKG_DIR}"
 
-log "Reading package list from hey-install..."
-dos2unix "${AIROOTFS}/usr/local/bin/hey-install" 2>/dev/null || true
-INSTALL_PKGS=$(awk '/local PACKAGES=\(/{flag=1; next} /\)/{flag=0} flag' "${AIROOTFS}/usr/local/bin/hey-install" | tr -d '\r\\' | tr '
-' ' ')
+# Extract package list from installer
+INSTALL_PKGS=$(awk '/local PACKAGES=\(/{flag=1; next} /\)/{flag=0} flag' "${AIROOTFS}/usr/local/bin/hey-install" | tr -d '\r\\' | tr '\n' ' ')
 INSTALL_PKGS="${INSTALL_PKGS} btrfs-progs"
 
-log "Downloading packages to host cache..."
-EMPTY_DB="${BUILD_TMP}/empty_pacman_db"
-mkdir -p "${EMPTY_DB}/local"
+# CACHING OPTIMIZATION: Only download if package list changed or cache empty
+CURRENT_PKG_HASH=$(echo "$INSTALL_PKGS" | md5sum | cut -d' ' -f1)
+if [[ ! -f "$PKG_STAMP" ]] || [[ "$CURRENT_PKG_HASH" != "$(cat "$PKG_STAMP")" ]] || $CLEAN; then
+    log "Package list changed or cache empty — downloading..."
+    EMPTY_DB="${BUILD_TMP}/empty_pacman_db"
+    mkdir -p "${EMPTY_DB}/local"
+    pacman -Syw --cachedir "${PKG_CACHE_DIR}" --dbpath "${EMPTY_DB}" --noconfirm ${INSTALL_PKGS} &>/dev/null || true
+    echo "$CURRENT_PKG_HASH" > "$PKG_STAMP"
+    log_ok "Packages downloaded to host cache."
+else
+    log_warn "Package list unchanged — using host cache."
+fi
 
-# pacman -Syw (Sync and download only)
-# --dbpath forces it to resolve all dependencies (as it thinks none are installed)
-pacman -Syw --cachedir "${PKG_CACHE_DIR}" --dbpath "${EMPTY_DB}" --noconfirm ${INSTALL_PKGS} 2>&1 | tee -a "$BUILD_LOG" || true
-
-log "Copying packages to airootfs offline storage..."
+# Always sync from host cache to ISO dir (fast)
 cp "${PKG_CACHE_DIR}/"*.pkg.tar.* "${ISO_PKG_DIR}/" 2>/dev/null || true
-
-log_ok "Offline packages cached on ISO (${ISO_PKG_DIR})"
+log_ok "Offline packages ready on ISO."
 
 # =============================================================================
-# Step 6: Build ISO with mkarchiso
+# Step 6: Build ISO
 # =============================================================================
 
 log_step "Step 6: Building ISO with mkarchiso"
 
-cd "$SCRIPT_DIR"
-
-# Use a disk-based work directory
 WORK_DIR="${SCRIPT_DIR}/work"
+mkdir -p "$WORK_DIR"
+mkdir -p "$OUTPUT_DIR"
 
 # Reuse work dir for incremental builds (mkarchiso skips installed packages)
 # Auto-wipe if the package list has changed since last build
 PACKAGES_FILE="${SCRIPT_DIR}/packages.x86_64"
 PACKAGES_STAMP="${WORK_DIR}/.packages_stamp"
+NEED_FULL_REINSTALL=false
+
 if [[ -d "$WORK_DIR" ]]; then
     if [[ ! -f "$PACKAGES_STAMP" ]] || ! diff -q "$PACKAGES_FILE" "$PACKAGES_STAMP" &>/dev/null; then
-        log "Package list changed — wiping work directory for fresh install..."
-        rm -rf "$WORK_DIR"
+        log "Package list changed — full re-installation required."
+        NEED_FULL_REINSTALL=true
+        cp "$PACKAGES_FILE" "$PACKAGES_STAMP"
     fi
 fi
-mkdir -p "$WORK_DIR"
-cp "$PACKAGES_FILE" "$PACKAGES_STAMP"
-mkdir -p "$OUTPUT_DIR"
 
-# Remove old ISOs to avoid confusion
-rm -f "${OUTPUT_DIR}"/heyOS-*.iso
-# Remove all mkarchiso state files so it doesn't skip generation.
-# This forces it to re-copy updated binaries, rebuild squashfs, and generate the final .iso,
-# while still allowing pacstrap to instantly reuse the already-installed packages in the work dir.
-rm -f "${WORK_DIR}"/base._* "${WORK_DIR}"/iso.* "${WORK_DIR}"/build.*
+# SURGICAL CLEANUP:
+# We delete everything except x86_64/ (where packages live).
+# If the package list DID NOT change, we also keep the 'base._make_packages' marker.
+log "Cleaning work directory markers..."
+find "$WORK_DIR" -maxdepth 1 ! -name "x86_64" ! -name "work" ! -name "." -exec rm -rf {} +
 
-# Fix Windows CRLF → Unix LF line endings using dos2unix (much faster than sed find)
-log "Ensuring Unix line endings for profile files..."
-find "$SCRIPT_DIR" -maxdepth 1 \( -name '*.sh' -o -name '*.cfg' -o -name 'packages.*' \) -exec dos2unix -q {} +
-find "$SCRIPT_DIR/syslinux" "$SCRIPT_DIR/efiboot" -type f -exec dos2unix -q {} + 2>/dev/null || true
-find "$SCRIPT_DIR/airootfs" -type f \( -name '*.conf' -o -name '*.sh' -o -name '*.service' \
-    -o -name '*.gen' -o -name 'shadow' -o -name 'gshadow' -o -name 'hostname' -o -name 'hey-install' \
-    -o -name 'os-release' -o -name 'issue' \) \
-    -exec dos2unix -q {} + 2>/dev/null || true
-
-# Ensure UI and source files have Unix line endings (critical for Slint/Rust on Linux)
-find "$SCRIPT_DIR/heygreeter" "$SCRIPT_DIR/heydm" -type f \( -name '*.slint' -o -name '*.rs' \) \
-    -exec dos2unix -q {} + 2>/dev/null || true
-log "Running mkarchiso..."
-mkarchiso -v -w "$WORK_DIR" -o "$OUTPUT_DIR" "$SCRIPT_DIR" \
-    2>&1 | tee -a "$BUILD_LOG"
-
-# Find the generated ISO
-ISO_FILE=$(find "$OUTPUT_DIR" -name "heyOS-*.iso" -type f | head -1)
-
-if [[ -z "$ISO_FILE" ]]; then
-    log_err "ISO build failed — no .iso file found in $OUTPUT_DIR"
-    exit 1
+if $NEED_FULL_REINSTALL; then
+    rm -f "$WORK_DIR/x86_64/airootfs.extracted" 2>/dev/null || true
+else
+    # Keep the markers that tell mkarchiso packages are already installed
+    touch "${WORK_DIR}/base._make_packages"
+    touch "${WORK_DIR}/base._make_pacman_conf"
 fi
 
-ISO_SIZE=$(du -h "$ISO_FILE" | cut -f1)
+log "Triggering fresh ISO generation..."
+rm -f "${OUTPUT_DIR}"/*.iso
 
-# =============================================================================
-# Done!
-# =============================================================================
+mkarchiso -v -w "$WORK_DIR" -o "$OUTPUT_DIR" "$SCRIPT_DIR" 2>&1 | tee -a "$BUILD_LOG"
+
+# Find the generated ISO (case-insensitive search)
+# We look for anything .iso in the output dir
+ISO_FILE=$(find "$OUTPUT_DIR" -maxdepth 1 -iname "*.iso" -type f | head -1)
+
+# FINAL RELOCATION: Move ISO to Windows workspace if applicable
+if [[ -f "${ISO_FILE:-}" ]]; then
+    # If we have a tracked WINDOWS_SRC, use it. 
+    # Otherwise, check if our current SCRIPT_DIR is already a mount.
+    FINAL_DEST=""
+    if [[ -n "${WINDOWS_SRC:-}" ]]; then
+        FINAL_DEST="${WINDOWS_SRC}/out"
+    elif [[ "$SCRIPT_DIR" == /mnt/* ]]; then
+        FINAL_DEST="${SCRIPT_DIR}/out"
+    fi
+
+    if [[ -n "$FINAL_DEST" ]]; then
+        mkdir -p "$FINAL_DEST"
+        echo -e "${BLUE}[MOVE]${NC} Moving ISO to Windows workspace: ${FINAL_DEST}" | tee -a "$BUILD_LOG"
+        
+        # Use rsync for cross-filesystem moves
+        if rsync -ah --progress --remove-source-files "$ISO_FILE" "$FINAL_DEST/"; then
+            NEW_ISO_PATH="${FINAL_DEST}/$(basename "$ISO_FILE")"
+            log_ok "ISO delivered to Windows: $NEW_ISO_PATH"
+            ISO_FILE="$NEW_ISO_PATH"
+        else
+            log_err "Failed to deliver ISO to Windows workspace. It remains at: $ISO_FILE"
+        fi
+    else
+        log_info "ISO is located at: $ISO_FILE"
+    fi
+else
+    log_err "No ISO file was generated. Check the logs above for errors."
+fi
 
 ELAPSED=$(( SECONDS - BUILD_START ))
-MINS=$(( ELAPSED / 60 ))
-SECS=$(( ELAPSED % 60 ))
-
-log_step "Build Complete!"
-
-echo -e "${PINK}${BOLD}"
-cat << EOF
-    ╔═══════════════════════════════════════════════╗
-    ║                                               ║
-    ║    heyOS ISO built successfully!              ║
-    ║                                               ║
-    ║    Output: ${ISO_FILE}
-    ║    Size:   ${ISO_SIZE}
-    ║    Time:   ${MINS}m ${SECS}s
-    ║                                               ║
-    ╚═══════════════════════════════════════════════╝
-EOF
-echo -e "${NC}"
-
-echo "" >> "$BUILD_LOG"
-echo "Build completed: $(date) (${MINS}m ${SECS}s)" >> "$BUILD_LOG"
-echo "ISO: ${ISO_FILE} (${ISO_SIZE})" >> "$BUILD_LOG"
-
-# Copy ISO back to Windows workspace if we were launched from there
-if [[ -n "$WINDOWS_SRC" ]]; then
-    WIN_OUT="${WINDOWS_SRC}/out"
-    mkdir -p "$WIN_OUT"
-    log "Moving ISO to Windows workspace: $WIN_OUT"
-    mv "$ISO_FILE" "$WIN_OUT/"
-    echo -e "${PINK}[OK]${NC}    ISO moved to: ${WIN_OUT}/$(basename "$ISO_FILE")" | tee -a "$BUILD_LOG"
-fi
+log_step "Build Complete in $(( ELAPSED / 60 ))m $(( ELAPSED % 60 ))s"

@@ -1,12 +1,10 @@
 import { Button, VerticalBox, HorizontalBox, LineEdit, ComboBox } from "std-widgets.slint";
 
 export component AppWindow inherits Window {
-    width: 1920px;
-    height: 1080px;
     title: "heyOS Greeter";
     no-frame: true;
-    background: transparent;
-    default-font-family: "Segoe UI", "Tahoma", "sans-serif";
+    background: #111; // Opaque background instead of transparent
+    default-font-family: "Segoe UI, Tahoma, sans-serif";
 
     callback login(string, string, string);
 
@@ -128,11 +126,14 @@ export component AppWindow inherits Window {
                     for user[i] in root.users : Rectangle {
                         height: 30px;
                         background: user-touch.has-hover ? #0078d7 : transparent;
-                        Text {
-                            text: user;
-                            color: user-touch.has-hover ? white : black;
+                        HorizontalBox {
                             padding-left: 10px;
-                            vertical-alignment: center;
+                            alignment: start;
+                            Text {
+                                text: user;
+                                color: user-touch.has-hover ? white : black;
+                                vertical-alignment: center;
+                            }
                         }
                         user-touch := TouchArea {
                             clicked => { 
