@@ -142,7 +142,9 @@ impl HeyDM {
         let listening_socket = ListeningSocketSource::new_auto()?;
         let socket_name = listening_socket.socket_name().to_os_string();
         info!("Wayland socket: {:?}", socket_name);
-        std::env::set_var("WAYLAND_DISPLAY", &socket_name);
+        
+        // Save the original display for nested mode before we potentially overwrite it
+        let original_wayland_display = std::env::var("WAYLAND_DISPLAY").ok();
 
         // ListeningSocketSource implements calloop 0.14 EventSource natively
         loop_handle.insert_source(listening_socket, |client_stream, _, state| {
@@ -166,8 +168,13 @@ impl HeyDM {
         )?;
 
         if use_winit {
-            Self::run_winit(&mut event_loop, &mut display, &mut state)?;
+            // Restore original display for winit to connect to parent compositor
+            if let Some(display_env) = original_wayland_display {
+                std::env::set_var("WAYLAND_DISPLAY", display_env);
+            }
+            Self::run_winit(&mut event_loop, &mut display, &mut state, socket_name)?;
         } else {
+            std::env::set_var("WAYLAND_DISPLAY", &socket_name);
             Self::run_udev(&mut event_loop, &mut display, &mut state)?;
         }
 
@@ -179,9 +186,14 @@ impl HeyDM {
         event_loop: &mut EventLoop<Self>,
         display: &mut Display<Self>,
         state: &mut Self,
+        socket_name: std::ffi::OsString,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        info!("Initializing winit backend with Glow (OpenGL) renderer");
         let (mut backend, mut winit_evt) = winit::init::<GlowRenderer>()?;
-
+        
+        // Set the variable for any future children we spawn (alacritty, etc.)
+        std::env::set_var("WAYLAND_DISPLAY", socket_name);
+        
         // winit 0.30: window_size() returns Size<i32, Physical> directly
         let output_size = backend.window_size();
         state.output_size = output_size;
@@ -243,8 +255,7 @@ impl HeyDM {
                 break;
             }
 
-            // Winit backend render path — bind() returns (&mut Renderer, GlesTarget)
-            // Scope the frame so target is dropped before backend.submit()
+            // Winit backend render path
             {
                 let (renderer, mut target) = backend.bind()?;
                 let mut frame = renderer
@@ -265,119 +276,13 @@ impl HeyDM {
 
     /// Run using udev/DRM backend (direct hardware — production path)
     fn run_udev(
-        event_loop: &mut EventLoop<Self>,
-        display: &mut Display<Self>,
-        state: &mut Self,
+        _event_loop: &mut EventLoop<Self>,
+        _display: &mut Display<Self>,
+        _state: &mut Self,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        info!("Initializing udev/DRM backend for direct hardware rendering");
-
-        let (_session, _session_notifier) = match smithay::backend::session::libseat::LibSeatSession::new()
-        {
-            Ok(s) => {
-                info!("libseat session opened successfully");
-                s
-            }
-            Err(e) => {
-                error!("Failed to open libseat session: {e}");
-                return Err(e.into());
-            }
-        };
-
-        // Enumerate udev devices looking for DRM GPUs
-        let mut enumerator = udev::Enumerator::new()?;
-        enumerator.match_subsystem("drm")?;
-        enumerator.match_sysname("card[0-9]*")?;
-
-        let mut gpu_path = None;
-        for device in enumerator.scan_devices()? {
-            if let Some(devnode) = device.devnode() {
-                info!("Found GPU: {:?}", devnode);
-                gpu_path = Some(devnode.to_path_buf());
-                break;
-            }
-        }
-
-        let gpu_path = gpu_path.ok_or_else(|| {
-            error!("No DRM GPU devices found!");
-            std::io::Error::new(std::io::ErrorKind::NotFound, "No GPU found")
-        })?;
-
-        info!("Using GPU: {:?}", gpu_path);
-
-        use smithay::backend::drm::{DrmDevice, DrmDeviceFd};
-        use std::os::unix::io::AsFd;
-        let file = std::fs::File::open(&gpu_path).map_err(|e| {
-            error!("Failed to open DRM device: {e}");
-            e
-        })?;
-        let fd = DrmDeviceFd::new(file.as_fd().try_clone_to_owned()?.into());
-
-        let (drm_device, _drm_notifier) = DrmDevice::new(fd, true)?;
-
-        // Scan connectors for connected displays
-        use drm::control::Device as DrmControlDevice;
-        let resources = drm_device.resource_handles()?;
-        use drm::control::connector::State as ConnState;
-        let connector = resources
-            .connectors()
-            .iter()
-            .find_map(|conn_handle| {
-                let conn_info = drm_device.get_connector(*conn_handle, true).ok()?;
-                if conn_info.state() == ConnState::Connected {
-                    Some(conn_info)
-                } else {
-                    None
-                }
-            })
-            .ok_or_else(|| {
-                error!("No connected display found");
-                std::io::Error::new(std::io::ErrorKind::NotFound, "No display connected")
-            })?;
-
-        let mode = connector
-            .modes()
-            .iter()
-            .max_by_key(|m: &&drm::control::Mode| (m.size().0 as u64) * (m.size().1 as u64))
-            .copied()
-            .ok_or_else(|| {
-                std::io::Error::new(std::io::ErrorKind::NotFound, "No display modes available")
-            })?;
-
-        let (w, h) = mode.size();
-        state.output_size = Size::from((w as i32, h as i32));
-        info!("Display mode: {}x{} @ {}Hz", w, h, mode.vrefresh());
-
-        let output = smithay::output::Output::new(
-            "heydm-drm".to_string(),
-            smithay::output::PhysicalProperties {
-                size: (w as i32, h as i32).into(),
-                subpixel: smithay::output::Subpixel::Unknown,
-                make: "heyOS".into(),
-                model: "DRM".into(),
-                serial_number: String::new(),
-            },
-        );
-
-        let output_mode = smithay::output::Mode {
-            size: state.output_size,
-            refresh: (mode.vrefresh() as i32) * 1000,
-        };
-
-        output.change_current_state(
-            Some(output_mode),
-            Some(Transform::Normal),
-            None,
-            Some((0, 0).into()),
-        );
-        output.set_preferred(output_mode);
-        output.create_global::<Self>(&state.display_handle);
-
-        info!("DRM/udev backend initialized — entering render loop");
-
-        loop {
-            display.flush_clients()?;
-            event_loop.dispatch(Some(Duration::from_millis(16)), state)?;
-        }
+        error!("Direct DRM/udev backend is not fully implemented for rendering.");
+        error!("Please run heydm via a Wayland compositor like cage (which provides WAYLAND_DISPLAY).");
+        std::process::exit(1);
     }
 }
 

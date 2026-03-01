@@ -16,6 +16,7 @@ smithay = { git = "https://github.com/Smithay/smithay", default-features = false
     "backend_winit",
     "desktop",
     "renderer_glow",
+    "renderer_pixman",
     "wayland_frontend",
     "xwayland",
 ] }

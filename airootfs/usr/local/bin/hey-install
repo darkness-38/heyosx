@@ -17,6 +17,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
+PINK='\033[1;35m'
 BOLD='\033[1m'
 NC='\033[0m' # No Color
 
@@ -44,7 +45,7 @@ confirm() {
 
 # Display the heyOS banner
 show_banner() {
-    echo -e "${CYAN}"
+    echo -e "${PINK}"
     cat << 'EOF'
 
     ██╗  ██╗███████╗██╗   ██╗ ██████╗ ███████╗
@@ -275,6 +276,9 @@ install_base() {
     # Enable parallel downloads for faster pacstrap
     sed -i 's/^#ParallelDownloads/ParallelDownloads/' /etc/pacman.conf
 
+    log_info "Updating archlinux-keyring in the live environment..."
+    pacman -Sy --noconfirm archlinux-keyring 2>&1 | tee -a "$LOG_FILE" || true
+
     log_info "Initializing pacman keyring..."
     pacman-key --init 2>&1 | tee -a "$LOG_FILE"
     pacman-key --populate archlinux 2>&1 | tee -a "$LOG_FILE"
@@ -293,11 +297,12 @@ install_base() {
         alacritty firefox thunar
         wayland wayland-protocols libxkbcommon libinput seatd
         xorg-xwayland cage
-        greetd weston plasma-workspace
+        greetd
         ttf-dejavu ttf-liberation noto-fonts
         grub efibootmgr dosfstools os-prober amd-ucode intel-ucode
         dbus gvfs tumbler
         bash-completion which less man-db man-pages
+        memtest86+ memtest86+-efi
     )
 
     if [[ "$ROOT_FS" == "btrfs" ]]; then
@@ -333,15 +338,16 @@ configure_system() {
     log_info "Deploying heyDM compositor..."
 
     # Copy binaries (they should exist in the live ISO's /usr/bin/)
-    if [[ -f /usr/bin/heydm ]]; then
-        cp /usr/bin/heydm "$MOUNT_POINT/usr/bin/heydm"
-        chmod 755 "$MOUNT_POINT/usr/bin/heydm"
+    if [[ ! -f /usr/bin/heydm ]] || [[ ! -f /usr/bin/hey-greeter ]]; then
+        log_err "Required heyOS binaries (/usr/bin/heydm or /usr/bin/hey-greeter) not found in the live environment."
+        log_err "Is this a broken ISO build?"
+        exit 1
     fi
 
-    if [[ -f /usr/bin/hey-greeter ]]; then
-        cp /usr/bin/hey-greeter "$MOUNT_POINT/usr/bin/hey-greeter"
-        chmod 755 "$MOUNT_POINT/usr/bin/hey-greeter"
-    fi
+    cp /usr/bin/heydm "$MOUNT_POINT/usr/bin/heydm"
+    chmod 755 "$MOUNT_POINT/usr/bin/heydm"
+    cp /usr/bin/hey-greeter "$MOUNT_POINT/usr/bin/hey-greeter"
+    chmod 755 "$MOUNT_POINT/usr/bin/hey-greeter"
 
     # Ensure the Wayland sessions directory exists
     mkdir -p "$MOUNT_POINT/usr/share/wayland-sessions"
@@ -349,7 +355,7 @@ configure_system() {
 [Desktop Entry]
 Name=heyDM
 Comment=The custom Wayland compositor for heyOS
-Exec=cage -d -s -- /usr/bin/heydm
+Exec=env WLR_RENDERER=pixman WLR_NO_HARDWARE_CURSORS=1 cage -d -s -- env WLR_RENDERER=pixman /usr/bin/heydm
 Type=Application
 DesktopNames=heydm
 EOF

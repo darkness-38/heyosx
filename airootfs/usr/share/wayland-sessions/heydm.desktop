@@ -1,6 +1,6 @@
 [Desktop Entry]
 Name=heyDM
 Comment=The custom Wayland compositor for heyOS
-Exec=/usr/bin/heydm
+Exec=env WLR_RENDERER=pixman WLR_NO_HARDWARE_CURSORS=1 cage -d -s -- env WLR_RENDERER=pixman /usr/bin/heydm
 Type=Application
 DesktopNames=heydm

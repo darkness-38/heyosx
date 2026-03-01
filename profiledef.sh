@@ -19,6 +19,7 @@ airootfs_image_type="squashfs"
 airootfs_image_tool_options=('-comp' 'lz4')
 file_permissions=(
   ["/usr/bin/heydm"]="0:0:755"
+  ["/usr/bin/hey-greeter"]="0:0:755"
   ["/usr/local/bin/hey-install"]="0:0:755"
   ["/etc/shadow"]="0:0:400"
   ["/etc/gshadow"]="0:0:400"

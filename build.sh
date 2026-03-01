@@ -9,8 +9,10 @@
 #   4. Set correct permissions
 #   5. Invoke mkarchiso to produce the final heyOS ISO
 #
-# Usage:  sudo bash build.sh [--clean]
-#   --clean    Force a full rebuild (wipe work dir and cargo cache)
+# Usage:  sudo bash build.sh [--clean] [--greeter-only] [--heydm-only]
+#   --clean         Force a full rebuild (wipe work dir and cargo cache)
+#   --greeter-only  Build ISO that launches hey-greeter immediately
+#   --heydm-only    Build ISO that launches heydm immediately (skipping greeter)
 #
 # Requirements: Arch Linux host with internet access
 # =============================================================================
@@ -31,11 +33,20 @@ JOBS=$(nproc 2>/dev/null || echo 4)
 
 # ---- Parse flags ----
 CLEAN=false
+GREETER_ONLY=false
+HEYDM_ONLY=false
 for arg in "$@"; do
     case "$arg" in
         --clean) CLEAN=true ;;
+        --greeter-only) GREETER_ONLY=true ;;
+        --heydm-only) HEYDM_ONLY=true ;;
     esac
 done
+
+if $GREETER_ONLY && $HEYDM_ONLY; then
+    echo "Error: Cannot use both --greeter-only and --heydm-only"
+    exit 1
+fi
 
 # ---- Colors ----
 RED='\033[0;31m'
@@ -43,6 +54,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
+PINK='\033[1;35m'
 BOLD='\033[1m'
 NC='\033[0m'
 
@@ -69,7 +81,7 @@ else
     echo "--- Native build relaunched: $(date) ---" >> "$BUILD_LOG"
 fi
 
-echo -e "${CYAN}${BOLD}"
+echo -e "${PINK}${BOLD}"
 cat << 'EOF'
 
     ██╗  ██╗███████╗██╗   ██╗ ██████╗ ███████╗
@@ -103,7 +115,8 @@ if [[ "$SCRIPT_DIR" == /mnt/* ]]; then
     log "Detected Windows mount ($SCRIPT_DIR) — copying to native Linux filesystem..."
     mkdir -p "$NATIVE_BUILD_DIR"
     # rsync the project (exclude work dir and output to save time)
-    rsync -a --delete \
+    # We use --checksum here because Windows/mnt timestamps are often unreliable
+    rsync -ac --delete \
         --exclude='work/' \
         --exclude='out/' \
         --exclude='pkg-cache/' \
@@ -148,7 +161,10 @@ pacman -Sy --needed --noconfirm \
     syslinux \
     dos2unix \
     lz4 \
-    fontconfig
+    fontconfig \
+    pixman \
+    libdrm \
+    noto-fonts
     2>&1 | tee -a "$BUILD_LOG"
 
 # Ensure Rust toolchain is properly configured
@@ -175,30 +191,33 @@ build_rust() {
 
     log_step "Compiling ${name}"
 
-    mkdir -p "$BUILD_TMP"
+    mkdir -p "$build_dir"
 
-    # Check if source has changed since last build
+    # 1. Sync source to build directory (native filesystem)
+    # We use -i (itemize-changes) and -c (checksum) to see exactly what files were updated.
+    # We exclude 'target/' and 'Cargo.lock' from deletion to preserve the cargo build cache.
+    log "Syncing ${name} source..."
+    local sync_out
+    sync_out=$(rsync -aic --delete --exclude='target/' --exclude='Cargo.lock' "$src_dir/" "$build_dir/")
+
+    # 2. Check if we really need to run cargo
     local needs_build=false
-    if [[ ! -f "$bin_path" ]]; then
+    if [[ ! -f "$bin_path" ]] || $CLEAN; then
         needs_build=true
-    else
-        # Rebuild only if any non-target source file is newer than the binary
-        local newer
-        newer=$(find "$src_dir" -type f -not -path "*/target/*" -newer "$bin_path" -print -quit 2>/dev/null || true)
-        if [[ -n "$newer" ]]; then
-            needs_build=true
-        elif [[ "$src_dir/Cargo.toml" -nt "$bin_path" ]]; then
+    elif [[ -n "$sync_out" ]]; then
+        # We only care if an actual file was modified (>f...c...) or added (>f+++++), or deleted (*deleting).
+        local significant_changes
+        significant_changes=$(echo "$sync_out" | grep -E "^(>f.*c|>f\+.*|\*deleting)" && echo "yes" || echo "no")
+        
+        if [[ "$significant_changes" == "yes" ]]; then
+            log "Changes detected in ${name} source files:"
+            echo "$sync_out" | grep -E "^(>f.*c|>f\+.*|\*deleting)" | awk '{print "  " $2}' | head -n 5 | tee -a "$BUILD_LOG"
+            [[ $(echo "$sync_out" | grep -E "^(>f.*c|>f\+.*|\*deleting)" | wc -l) -gt 5 ]] && log "  ...and more."
             needs_build=true
         fi
     fi
 
     if $needs_build; then
-        # Sync sources while preserving the cargo target/ cache
-        log "Syncing ${name} source to ${build_dir}..."
-        mkdir -p "$build_dir"
-        # Copy source files (exclude target/ to keep build cache)
-        find "$src_dir" -maxdepth 1 -mindepth 1 ! -name target -exec cp -a {} "$build_dir/" \;
-
         cd "$build_dir"
         log "Running cargo build --release for ${name}..."
         export TMPDIR="${BUILD_TMP}/tmp"
@@ -220,22 +239,59 @@ build_rust() {
     fi
 }
 
-build_rust "heyDM (Wayland compositor)" "heydm"
-build_rust "hey-greeter (Login Manager)" "heygreeter" "hey-greeter"
+if ! $GREETER_ONLY; then
+    build_rust "heyDM (Wayland compositor)" "heydm"
+fi
+
+if ! $HEYDM_ONLY; then
+    build_rust "hey-greeter (Login Manager)" "heygreeter" "hey-greeter"
+fi
 
 # =============================================================================
 # Step 4: Deploy Binaries into airootfs
 # =============================================================================
 
-log_step "Step 4: Deploying binaries into airootfs"
+log_step "Step 4: Deploying binaries and configuring boot"
 
 mkdir -p "${AIROOTFS}/usr/bin"
 mkdir -p "${AIROOTFS}/usr/local/bin"
+mkdir -p "${AIROOTFS}/etc/greetd"
 
-cp "${BUILD_TMP}/heydm/target/release/heydm" "${AIROOTFS}/usr/bin/heydm"
-cp "${BUILD_TMP}/heygreeter/target/release/hey-greeter" "${AIROOTFS}/usr/bin/hey-greeter"
+if $GREETER_ONLY; then
+    log "Configuring ISO for GREETER-ONLY testing..."
+    cp "${BUILD_TMP}/heygreeter/target/release/hey-greeter" "${AIROOTFS}/usr/bin/hey-greeter"
+    cat << EOF > "${AIROOTFS}/etc/greetd/config.toml"
+[terminal]
+vt = 1
+[default_session]
+command = "env WLR_RENDERER=pixman WLR_NO_HARDWARE_CURSORS=1 cage -s -- /usr/bin/hey-greeter"
+user = "hey"
+EOF
+elif $HEYDM_ONLY; then
+    log "Configuring ISO for HEYDM-ONLY testing (skipping greeter)..."
+    cp "${BUILD_TMP}/heydm/target/release/heydm" "${AIROOTFS}/usr/bin/heydm"
+    cat << EOF > "${AIROOTFS}/etc/greetd/config.toml"
+[terminal]
+vt = 1
+[default_session]
+command = "env WLR_RENDERER=pixman WLR_NO_HARDWARE_CURSORS=1 cage -s -- env WLR_RENDERER=pixman /usr/bin/heydm"
+user = "hey"
+EOF
+else
+    log "Deploying full system binaries..."
+    cp "${BUILD_TMP}/heydm/target/release/heydm" "${AIROOTFS}/usr/bin/heydm"
+    cp "${BUILD_TMP}/heygreeter/target/release/hey-greeter" "${AIROOTFS}/usr/bin/hey-greeter"
+    # Restore default greetd config
+    cat << EOF > "${AIROOTFS}/etc/greetd/config.toml"
+[terminal]
+vt = 1
+[default_session]
+command = "env WLR_RENDERER=pixman WLR_NO_HARDWARE_CURSORS=1 cage -s -- /usr/bin/hey-greeter"
+user = "hey"
+EOF
+fi
 
-log_ok "Binaries deployed to airootfs/usr/bin/"
+log_ok "Binaries deployed and boot configured"
 
 # =============================================================================
 # Step 5: Set Permissions
@@ -243,8 +299,12 @@ log_ok "Binaries deployed to airootfs/usr/bin/"
 
 log_step "Step 5: Setting file permissions"
 
-chmod 755 "${AIROOTFS}/usr/bin/heydm"
-chmod 755 "${AIROOTFS}/usr/bin/hey-greeter"
+if ! $HEYDM_ONLY; then
+    chmod 755 "${AIROOTFS}/usr/bin/hey-greeter"
+fi
+if ! $GREETER_ONLY; then
+    chmod 755 "${AIROOTFS}/usr/bin/heydm"
+fi
 chmod 755 "${AIROOTFS}/usr/local/bin/hey-install"
 chmod 755 "${AIROOTFS}/root/customize_airootfs.sh"
 
@@ -349,7 +409,7 @@ SECS=$(( ELAPSED % 60 ))
 
 log_step "Build Complete!"
 
-echo -e "${GREEN}${BOLD}"
+echo -e "${PINK}${BOLD}"
 cat << EOF
     ╔═══════════════════════════════════════════════╗
     ║                                               ║
@@ -373,5 +433,5 @@ if [[ -n "$WINDOWS_SRC" ]]; then
     mkdir -p "$WIN_OUT"
     log "Moving ISO to Windows workspace: $WIN_OUT"
     mv "$ISO_FILE" "$WIN_OUT/"
-    log_ok "ISO moved to: ${WIN_OUT}/$(basename "$ISO_FILE")"
+    echo -e "${PINK}[OK]${NC}    ISO moved to: ${WIN_OUT}/$(basename "$ISO_FILE")" | tee -a "$BUILD_LOG"
 fi

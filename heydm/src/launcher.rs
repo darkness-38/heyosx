@@ -342,30 +342,34 @@ impl AppLauncher {
         let output_w = 1920; // These would ideally be passed in
         let output_h = 1080;
 
-        let launcher_w = 600.min(output_w - 100);
-        let launcher_h = 400.min(output_h - 200);
+        let launcher_w = 800.min(output_w - 100);
+        let launcher_h = 600.min(output_h - 200);
         let launcher_x = (output_w - launcher_w) / 2;
         let launcher_y = (output_h - launcher_h) / 2;
 
-        // Check if click is inside the launcher
-        if x < launcher_x as f64
-            || x > (launcher_x + launcher_w) as f64
-            || y < launcher_y as f64
-            || y > (launcher_y + launcher_h) as f64
-        {
-            return None; // Click outside launcher
+        if x < launcher_x as f64 || x > (launcher_x + launcher_w) as f64 || y < launcher_y as f64 || y > (launcher_y + launcher_h) as f64 {
+            return None;
         }
 
-        // Calculate which item was clicked
-        let search_bar_h = 40;
-        let items_start_y = launcher_y + 10 + search_bar_h + 10;
-        let item_h = 36;
-
+        let search_bar_h = 50;
+        let items_start_y = launcher_y + 20 + search_bar_h + 20; // 90
+        
         if y < items_start_y as f64 {
-            return None; // Click on search bar area
+            return None; // clicked search bar
         }
-
-        let clicked_idx = ((y - items_start_y as f64) / item_h as f64) as usize;
+        
+        let cols = 4;
+        let item_w = (launcher_w - 60) / cols;
+        let item_h = 100;
+        
+        let col = ((x - (launcher_x as f64 + 30.0)) / item_w as f64) as i32;
+        let row = ((y - items_start_y as f64) / item_h as f64) as i32;
+        
+        if col < 0 || col >= cols || row < 0 || row >= 3 {
+            return None; // outside grid
+        }
+        
+        let clicked_idx = (row * cols + col) as usize;
 
         if let Some(&app_idx) = self.filtered.get(clicked_idx) {
             let exec = self.apps[app_idx].exec.clone();

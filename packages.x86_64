@@ -95,8 +95,6 @@ libxkbcommon
 fontconfig
 mesa
 polkit
-weston
-plasma-workspace
 
 # ---- D-Bus (required by many services) ----
 dbus

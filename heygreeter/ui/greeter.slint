@@ -1,4 +1,4 @@
-import { Button, VerticalBox, LineEdit, ComboBox } from "std-widgets.slint";
+import { Button, VerticalBox, HorizontalBox, LineEdit, ComboBox } from "std-widgets.slint";
 
 export component AppWindow inherits Window {
     width: 1920px;
@@ -6,122 +6,195 @@ export component AppWindow inherits Window {
     title: "heyOS Greeter";
     no-frame: true;
     background: transparent;
-    default-font-family: "Noto Sans";
+    default-font-family: "JetBrains Mono";
 
     callback login(string, string, string);
 
-    // Teto Theme Colors
-    property <color> teto-crimson: #d53a47;
-    property <color> teto-cyan: #4bb3d3;
-    property <color> bg-dark: #121217;
-    property <color> glass-bg: #1c1c24e6;
+    // heyOS Pink Theme
+    property <color> accent: #ff66b2;
+    property <color> bg-dark: #050507;
+    property <color> card-bg: #0f0f14f2;
+    property <color> input-bg: #1a1a24;
+    
+    in property <[string]> users: ["hey"];
+    in property <[string]> sessions: ["heydm"];
+    in property <string> error-message: "";
+    
+    // Properties for clock (updated from Rust side or simple internal timer)
+    property <string> current-time: "12:00";
+    property <string> current-date: "Monday, March 1";
 
-    in property <[string]> users: ["hamza"];
-    in property <[string]> sessions: ["heydm", "plasma"];
     out property <string> selected-user: users[0];
     out property <string> selected-session: sessions[0];
     
-    // Background Animation Setup
+    // Global Background
     Rectangle {
         width: 100%;
         height: 100%;
-        background: @linear-gradient(135deg, bg-dark 0%, #1a151b 50%, bg-dark 100%);
+        background: bg-dark;
         
-        // Subtle animated twin drills / swooshes
-        Path {
-            stroke: teto-crimson.with-alpha(0.05);
-            stroke-width: 200px;
-            MoveTo { x: -100; y: -100; }
-            CubicTo { control-1-x: 500; control-1-y: 800; control-2-x: 1400; control-2-y: 200; x: 2000; y: 1200; }
+        // Background Glows
+        Rectangle {
+            x: parent.width * 0.15; y: parent.height * 0.1; width: 800px; height: 800px;
+            background: @radial-gradient(circle, accent.with-alpha(0.06) 0%, transparent 70%);
         }
-        Path {
-            stroke: teto-cyan.with-alpha(0.03);
-            stroke-width: 150px;
-            MoveTo { x: 2000; y: -100; }
-            CubicTo { control-1-x: 1400; control-1-y: 800; control-2-x: 500; control-2-y: 200; x: -100; y: 1200; }
+        Rectangle {
+            x: parent.width * 0.65; y: parent.height * 0.5; width: 700px; height: 700px;
+            background: @radial-gradient(circle, #4bb3d3.with-alpha(0.04) 0%, transparent 70%);
+        }
+    }
+
+    // Top Clock Section
+    VerticalBox {
+        y: 120px;
+        width: 100%;
+        spacing: 0px;
+        Text {
+            text: root.current-time;
+            font-size: 120px;
+            font-weight: 900;
+            color: white;
+            horizontal-alignment: center;
+            letter-spacing: -2px;
+        }
+        Text {
+            text: root.current-date;
+            font-size: 24px;
+            font-weight: 500;
+            color: accent;
+            horizontal-alignment: center;
+            letter-spacing: 2px;
         }
     }
 
     // Main Login Card
     Rectangle {
-        width: 400px;
-        height: 500px;
-        background: glass-bg;
-        border-radius: 20px;
-        border-width: 2px;
-        border-color: teto-crimson.with-alpha(0.3);
-        drop-shadow-blur: 40px;
-        drop-shadow-color: #00000080;
-
-        // Entry animation
-        y: -50px;
-        opacity: 0;
-        animate y { duration: 800ms; easing: ease-out; }
-        animate opacity { duration: 800ms; easing: ease-in-out; }
-        init => {
-            self.y = parent.height / 2 - 250px;
-            self.opacity = 1;
-        }
+        width: 360px;
+        height: 480px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2 + 100px;
+        background: card-bg;
+        border-radius: 32px;
+        border-width: 1px;
+        border-color: white.with-alpha(0.08);
+        drop-shadow-blur: 60px;
+        drop-shadow-color: #000000a0;
 
         VerticalBox {
-            padding: 40px;
+            padding: 45px;
             spacing: 25px;
             alignment: center;
 
+            // User Avatar (Animated Pulse)
+            Rectangle {
+                width: 100px;
+                height: 100px;
+                background: input-bg;
+                border-radius: 50px;
+                border-width: 3px;
+                border-color: accent;
+                
+                Text {
+                    text: ""; // User icon
+                    font-size: 48px;
+                    font-family: "Font Awesome 6 Free";
+                    color: white.with-alpha(0.4);
+                    vertical-alignment: center;
+                    horizontal-alignment: center;
+                }
+            }
+
+            // Username display
             Text {
-                text: "heyOS";
-                font-size: 36px;
-                font-weight: 800;
-                color: teto-crimson;
+                text: root.selected-user;
+                font-size: 28px;
+                font-weight: 700;
+                color: white;
                 horizontal-alignment: center;
             }
-            
-            Text {
-                text: "Welcome back";
-                font-size: 16px;
-                color: white.with-alpha(0.6);
-                horizontal-alignment: center;
-            }
 
-            ComboBox {
-                model: root.users;
-                current-value: root.selected-user;
-                selected(val) => { root.selected-user = val; }
-                height: 45px;
-            }
-
-            ComboBox {
-                model: root.sessions;
-                current-value: root.selected-session;
-                selected(val) => { root.selected-session = val; }
-                height: 45px;
-            }
-
+            // Password Field
             pwd := LineEdit {
-                placeholder-text: "Password...";
+                placeholder-text: "Password";
                 input-type: password;
-                height: 45px;
+                height: 54px;
                 font-size: 16px;
+                horizontal-alignment: center;
                 accepted => { root.login(root.selected-user, self.text, root.selected-session); }
             }
 
-            login_btn := Rectangle {
-                height: 50px;
-                background: touch.pressed ? teto-crimson.darker(0.2) : (touch.has-hover ? teto-crimson.brighter(0.2) : teto-crimson);
-                border-radius: 10px;
-                animate background { duration: 200ms; }
+            if (root.error-message != "") : Text {
+                text: root.error-message;
+                color: #ff4d4d;
+                font-size: 13px;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
 
+            // Login Button
+            login_btn := Rectangle {
+                height: 54px;
+                background: touch.pressed ? accent.darker(0.2) : (touch.has-hover ? accent.brighter(0.1) : accent);
+                border-radius: 16px;
+                animate background { duration: 150ms; }
+                
                 Text {
-                    text: "Log In";
+                    text: "SIGN IN";
                     color: white;
-                    font-size: 18px;
-                    font-weight: 700;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
+                    font-size: 14px;
+                    font-weight: 900;
+                    letter-spacing: 2px;
                 }
 
                 touch := TouchArea {
                     clicked => { root.login(root.selected-user, pwd.text, root.selected-session); }
+                }
+            }
+        }
+    }
+
+    // Bottom Bar (User & Session Changers)
+    Rectangle {
+        y: parent.height - 80px;
+        width: 100%;
+        height: 80px;
+        
+        HorizontalBox {
+            alignment: center;
+            spacing: 40px;
+            padding: 20px;
+
+            // User Changer
+            HorizontalBox {
+                spacing: 10px;
+                Text { text: ""; vertical-alignment: center; color: accent; font-size: 18px; }
+                ComboBox {
+                    width: 150px;
+                    model: root.users;
+                    current-value: root.selected-user;
+                    selected(val) => { root.selected-user = val; }
+                }
+            }
+
+            // Session Changer
+            HorizontalBox {
+                spacing: 10px;
+                Text { text: ""; vertical-alignment: center; color: accent; font-size: 18px; }
+                ComboBox {
+                    width: 150px;
+                    model: root.sessions;
+                    current-value: root.selected-session;
+                    selected(val) => { root.selected-session = val; }
+                }
+            }
+            
+            // Power Options
+            HorizontalBox {
+                spacing: 20px;
+                padding-left: 20px;
+                Text { 
+                    text: ""; color: white.with-alpha(0.5); font-size: 20px;
+                    TouchArea { clicked => { /* Root would handle this */ } }
                 }
             }
         }
