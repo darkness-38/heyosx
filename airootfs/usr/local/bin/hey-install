@@ -54,7 +54,7 @@ show_banner() {
     ██║  ██║███████╗   ██║   ╚██████╔╝███████║
     ╚═╝  ╚═╝╚══════╝   ╚═╝    ╚═════╝ ╚══════╝
 
-          ═══ System Installer v0.1 ═══
+            ═══ System Installer ═══
 EOF
     echo -e "${NC}"
 }
@@ -110,7 +110,7 @@ select_disk() {
     log_step "Disk Selection"
 
     echo -e "\n${BOLD}Available disks:${NC}\n"
-    lsblk -dpno NAME,SIZE,MODEL | grep -v "^/dev/loop\|^/dev/sr\|^/dev/ram"
+    lsblk -dpno NAME,SIZE,MODEL | grep -v "^/dev/loop\|^/dev/sr\|^/dev/ram" || true
     echo ""
 
     while true; do
@@ -177,7 +177,7 @@ partition_disk() {
 
         # Use lsblk to safely find the new partitions regardless of naming scheme (e.g. sda1 vs nvmeON1p1)
         partprobe "$TARGET_DISK" 2>/dev/null || true
-        sleep 2
+        udevadm settle
         EFI_PART=$(lsblk -rnpo NAME "$TARGET_DISK" | sed '1d' | head -n 1)
         ROOT_PART=$(lsblk -rnpo NAME "$TARGET_DISK" | sed '1,2d' | head -n 1)
         
@@ -191,7 +191,7 @@ partition_disk() {
         echo -e "o\nn\np\n1\n\n\nw" | fdisk "$TARGET_DISK" >> "$LOG_FILE" 2>&1
 
         partprobe "$TARGET_DISK" 2>/dev/null || true
-        sleep 2
+        udevadm settle
         ROOT_PART=$(lsblk -rnpo NAME "$TARGET_DISK" | sed '1d' | head -n 1)
         EFI_PART=""
         
@@ -275,25 +275,42 @@ install_base() {
     # Enable parallel downloads for faster pacstrap
     sed -i 's/^#ParallelDownloads/ParallelDownloads/' /etc/pacman.conf
 
+    log_info "Initializing pacman keyring..."
+    pacman-key --init 2>&1 | tee -a "$LOG_FILE"
+    pacman-key --populate archlinux 2>&1 | tee -a "$LOG_FILE"
+
     log_info "Fetching latest pacman mirrors (this may take a moment)..."
     reflector --latest 10 --protocol https --sort rate --save /etc/pacman.d/mirrorlist 2>&1 | tee -a "$LOG_FILE"
 
-    pacstrap -K "$MOUNT_POINT" \
-        base linux linux-firmware \
-        sudo systemd \
-        networkmanager \
-        pipewire pipewire-pulse pipewire-alsa wireplumber \
-        open-vm-tools mesa \
-        nano vim \
-        alacritty firefox thunar \
-        wayland wayland-protocols libxkbcommon libinput seatd \
-        xorg-xwayland \
-        sddm weston plasma-workspace \
-        ttf-dejavu ttf-liberation noto-fonts \
-        grub efibootmgr dosfstools os-prober amd-ucode intel-ucode \
-        dbus gvfs tumbler \
-        bash-completion which less man-db man-pages \
-        2>&1 | tee -a "$LOG_FILE"
+    local PACKAGES=(
+        base linux linux-firmware
+        archlinux-keyring
+        sudo systemd
+        networkmanager
+        pipewire pipewire-pulse pipewire-alsa wireplumber
+        open-vm-tools mesa
+        nano vim
+        alacritty firefox thunar
+        wayland wayland-protocols libxkbcommon libinput seatd
+        xorg-xwayland cage
+        greetd weston plasma-workspace
+        ttf-dejavu ttf-liberation noto-fonts
+        grub efibootmgr dosfstools os-prober amd-ucode intel-ucode
+        dbus gvfs tumbler
+        bash-completion which less man-db man-pages
+    )
+
+    if [[ "$ROOT_FS" == "btrfs" ]]; then
+        PACKAGES+=(btrfs-progs)
+    fi
+
+    if [[ -d "/opt/heyos-packages" ]]; then
+        log_info "Using offline cached packages to speed up installation..."
+        mkdir -p "$MOUNT_POINT/var/cache/pacman/pkg"
+        cp /opt/heyos-packages/*.pkg.tar.* "$MOUNT_POINT/var/cache/pacman/pkg/" 2>/dev/null || true
+    fi
+
+    pacstrap -K "$MOUNT_POINT" "${PACKAGES[@]}" 2>&1 | tee -a "$LOG_FILE"
 
     log_ok "Base system installed"
 }
@@ -309,6 +326,9 @@ configure_system() {
     genfstab -U "$MOUNT_POINT" >> "$MOUNT_POINT/etc/fstab"
     log_ok "fstab generated"
 
+    # Persist parallel downloads for the installed system
+    sed -i 's/^#ParallelDownloads/ParallelDownloads/' "$MOUNT_POINT/etc/pacman.conf"
+
     # Copy heyOS custom files into the installed system
     log_info "Deploying heyDM compositor..."
 
@@ -318,33 +338,35 @@ configure_system() {
         chmod 755 "$MOUNT_POINT/usr/bin/heydm"
     fi
 
+    if [[ -f /usr/bin/hey-greeter ]]; then
+        cp /usr/bin/hey-greeter "$MOUNT_POINT/usr/bin/hey-greeter"
+        chmod 755 "$MOUNT_POINT/usr/bin/hey-greeter"
+    fi
+
     # Ensure the Wayland sessions directory exists
     mkdir -p "$MOUNT_POINT/usr/share/wayland-sessions"
     cat << 'EOF' > "$MOUNT_POINT/usr/share/wayland-sessions/heydm.desktop"
 [Desktop Entry]
 Name=heyDM
 Comment=The custom Wayland compositor for heyOS
-Exec=/usr/bin/heydm
+Exec=cage -d -s -- /usr/bin/heydm
 Type=Application
 DesktopNames=heydm
 EOF
 
-    # Configure SDDM to use Wayland natively
-    mkdir -p "$MOUNT_POINT/etc/sddm.conf.d"
-    cat << 'EOF' > "$MOUNT_POINT/etc/sddm.conf.d/wayland.conf"
-[General]
-DisplayServer=wayland
+    # Configure greetd to launch hey-greeter via cage
+    mkdir -p "$MOUNT_POINT/etc/greetd"
+    cat << 'EOF' > "$MOUNT_POINT/etc/greetd/config.toml"
+[terminal]
+vt = 1
 
-[Wayland]
-CompositorCommand=weston --shell=kiosk-shell.so
-EnableHiDPI=true
-
-[Theme]
-Current=breeze
+[default_session]
+command = "env WLR_RENDERER=pixman WLR_NO_HARDWARE_CURSORS=1 cage -s -- /usr/bin/hey-greeter"
+user = "greeter"
 EOF
 
     # ---- Chroot configuration ----
-    cat << 'CHROOT_SCRIPT' > "$MOUNT_POINT/tmp/hey-setup.sh"
+    cat << 'CHROOT_SCRIPT' > "$MOUNT_POINT/root/hey-setup.sh"
 #!/bin/bash
 set -e
 
@@ -356,6 +378,9 @@ hwclock --systohc
 echo "en_US.UTF-8 UTF-8" > /etc/locale.gen
 locale-gen
 echo "LANG=en_US.UTF-8" > /etc/locale.conf
+
+# Vconsole
+echo "KEYMAP=us" > /etc/vconsole.conf
 
 # Hostname
 echo "heyOS" > /etc/hostname
@@ -369,8 +394,11 @@ EOF
 systemctl enable NetworkManager.service
 systemctl enable vmtoolsd.service 2>/dev/null || true
 systemctl enable seatd.service
-systemctl enable sddm.service 2>/dev/null || true
+systemctl enable greetd.service
 systemctl set-default graphical.target
+
+# Add greeter to seat group for Wayland
+usermod -aG seat greeter || true
 
 # Sudoers
 echo "%wheel ALL=(ALL:ALL) ALL" > /etc/sudoers.d/00-heyos
@@ -382,9 +410,9 @@ mkinitcpio -P
 echo "[heyOS] Chroot configuration complete."
 CHROOT_SCRIPT
 
-    chmod +x "$MOUNT_POINT/tmp/hey-setup.sh"
-    arch-chroot "$MOUNT_POINT" /tmp/hey-setup.sh 2>&1 | tee -a "$LOG_FILE"
-    rm -f "$MOUNT_POINT/tmp/hey-setup.sh"
+    chmod +x "$MOUNT_POINT/root/hey-setup.sh"
+    arch-chroot "$MOUNT_POINT" /root/hey-setup.sh 2>&1 | tee -a "$LOG_FILE"
+    rm -f "$MOUNT_POINT/root/hey-setup.sh"
 
     log_ok "System configured"
 }
@@ -483,8 +511,6 @@ show_complete() {
     ║                                               ║
     ║    Remove the installation media and reboot   ║
     ║    to start using heyOS.                      ║
-    ║                                               ║
-    ║    Command: sudo reboot                       ║
     ║                                               ║
     ╚═══════════════════════════════════════════════╝
 EOF

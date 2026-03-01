@@ -13,6 +13,7 @@ linux-firmware-amdgpu
 linux-firmware-radeon
 linux-firmware-realtek
 linux-firmware-atheros
+archlinux-keyring
 sudo
 systemd
 mkinitcpio
@@ -30,14 +31,19 @@ gptfdisk
 # ---- Hardware / VM Support ----
 open-vm-tools
 mesa
+vulkan-intel
+vulkan-radeon
+vulkan-mesa-layers
 
 # ---- Wayland Stack ----
 wayland
 wayland-protocols
 libxkbcommon
 libinput
+mesa-utils
 seatd
 xorg-xwayland
+cage
 
 # ---- Networking ----
 networkmanager
@@ -81,7 +87,14 @@ glibc
 
 # ---- PAM ----
 pam
-sddm
+greetd
+cage
+noto-fonts
+wayland
+libxkbcommon
+fontconfig
+mesa
+polkit
 weston
 plasma-workspace
 

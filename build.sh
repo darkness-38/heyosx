@@ -26,7 +26,7 @@ else
 fi
 OUTPUT_DIR="${SCRIPT_DIR}/out"
 AIROOTFS="${SCRIPT_DIR}/airootfs"
-BUILD_TMP="/tmp/heyos-cargo-build"
+BUILD_TMP="/var/lib/heyos-cargo-build"
 JOBS=$(nproc 2>/dev/null || echo 4)
 
 # ---- Parse flags ----
@@ -50,7 +50,9 @@ log()      { echo -e "${BLUE}[BUILD]${NC} $*" | tee -a "$BUILD_LOG"; }
 log_ok()   { echo -e "${GREEN}[OK]${NC}    $*" | tee -a "$BUILD_LOG"; }
 log_warn() { echo -e "${YELLOW}[SKIP]${NC}  $*" | tee -a "$BUILD_LOG"; }
 log_err()  { echo -e "${RED}[ERROR]${NC} $*" | tee -a "$BUILD_LOG"; }
-log_step() { echo -e "\n${CYAN}${BOLD}══════ $* ══════${NC}\n" | tee -a "$BUILD_LOG"; }
+log_step() { echo -e "
+${CYAN}${BOLD}══════ $* ══════${NC}
+" | tee -a "$BUILD_LOG"; }
 
 # Track total build time
 BUILD_START=$SECONDS
@@ -107,6 +109,7 @@ if [[ "$SCRIPT_DIR" == /mnt/* ]]; then
         --exclude='pkg-cache/' \
         --exclude='.git/' \
         --exclude='heydm/target/' \
+        --exclude='heygreeter/target/' \
         "$SCRIPT_DIR/" "$NATIVE_BUILD_DIR/"
 
     log_ok "Project synced to $NATIVE_BUILD_DIR"
@@ -118,7 +121,7 @@ fi
 
 if $CLEAN; then
     log "Clean build requested — wiping caches..."
-    rm -rf "$BUILD_TMP" "${SCRIPT_DIR}/work"
+    rm -rf "$BUILD_TMP" "${SCRIPT_DIR}/work" "${SCRIPT_DIR}/pkg-cache" "${AIROOTFS}/opt/heyos-packages"
 fi
 
 # =============================================================================
@@ -145,6 +148,7 @@ pacman -Sy --needed --noconfirm \
     syslinux \
     dos2unix \
     lz4 \
+    fontconfig
     2>&1 | tee -a "$BUILD_LOG"
 
 # Ensure Rust toolchain is properly configured
@@ -163,9 +167,10 @@ log_ok "Build dependencies installed"
 # Usage: build_rust <name> <source_dir>
 build_rust() {
     local name="$1"
-    local src_dir="${SCRIPT_DIR}/${2}"
-    local build_dir="${BUILD_TMP}/${2}"
-    local bin_name="$2"
+    local dir_name="$2"
+    local bin_name="${3:-$2}"
+    local src_dir="${SCRIPT_DIR}/${dir_name}"
+    local build_dir="${BUILD_TMP}/${dir_name}"
     local bin_path="${build_dir}/target/release/${bin_name}"
 
     log_step "Compiling ${name}"
@@ -177,9 +182,9 @@ build_rust() {
     if [[ ! -f "$bin_path" ]]; then
         needs_build=true
     else
-        # Rebuild only if any src/ file or Cargo.toml is newer than the binary
+        # Rebuild only if any non-target source file is newer than the binary
         local newer
-        newer=$(find "$src_dir/src" -newer "$bin_path" -print -quit 2>/dev/null || true)
+        newer=$(find "$src_dir" -type f -not -path "*/target/*" -newer "$bin_path" -print -quit 2>/dev/null || true)
         if [[ -n "$newer" ]]; then
             needs_build=true
         elif [[ "$src_dir/Cargo.toml" -nt "$bin_path" ]]; then
@@ -196,6 +201,8 @@ build_rust() {
 
         cd "$build_dir"
         log "Running cargo build --release for ${name}..."
+        export TMPDIR="${BUILD_TMP}/tmp"
+        mkdir -p "$TMPDIR"
         cargo build --release 2>&1 | tee -a "$BUILD_LOG"
 
         if [[ ! -f "$bin_path" ]]; then
@@ -214,6 +221,7 @@ build_rust() {
 }
 
 build_rust "heyDM (Wayland compositor)" "heydm"
+build_rust "hey-greeter (Login Manager)" "heygreeter" "hey-greeter"
 
 # =============================================================================
 # Step 4: Deploy Binaries into airootfs
@@ -225,6 +233,7 @@ mkdir -p "${AIROOTFS}/usr/bin"
 mkdir -p "${AIROOTFS}/usr/local/bin"
 
 cp "${BUILD_TMP}/heydm/target/release/heydm" "${AIROOTFS}/usr/bin/heydm"
+cp "${BUILD_TMP}/heygreeter/target/release/hey-greeter" "${AIROOTFS}/usr/bin/hey-greeter"
 
 log_ok "Binaries deployed to airootfs/usr/bin/"
 
@@ -235,6 +244,7 @@ log_ok "Binaries deployed to airootfs/usr/bin/"
 log_step "Step 5: Setting file permissions"
 
 chmod 755 "${AIROOTFS}/usr/bin/heydm"
+chmod 755 "${AIROOTFS}/usr/bin/hey-greeter"
 chmod 755 "${AIROOTFS}/usr/local/bin/hey-install"
 chmod 755 "${AIROOTFS}/root/customize_airootfs.sh"
 
@@ -242,6 +252,37 @@ chmod 755 "${AIROOTFS}/root/customize_airootfs.sh"
 chmod 440 "${AIROOTFS}/etc/sudoers.d/00-heyos" 2>/dev/null || true
 
 log_ok "Permissions set"
+
+# =============================================================================
+# Step 5.5: Cache offline installation packages
+# =============================================================================
+
+log_step "Step 5.5: Caching offline installer packages"
+
+PKG_CACHE_DIR="${SCRIPT_DIR}/pkg-cache"
+ISO_PKG_DIR="${AIROOTFS}/opt/heyos-packages"
+
+mkdir -p "${PKG_CACHE_DIR}"
+mkdir -p "${ISO_PKG_DIR}"
+
+log "Reading package list from hey-install..."
+dos2unix "${AIROOTFS}/usr/local/bin/hey-install" 2>/dev/null || true
+INSTALL_PKGS=$(awk '/local PACKAGES=\(/{flag=1; next} /\)/{flag=0} flag' "${AIROOTFS}/usr/local/bin/hey-install" | tr -d '\r\\' | tr '
+' ' ')
+INSTALL_PKGS="${INSTALL_PKGS} btrfs-progs"
+
+log "Downloading packages to host cache..."
+EMPTY_DB="${BUILD_TMP}/empty_pacman_db"
+mkdir -p "${EMPTY_DB}/local"
+
+# pacman -Syw (Sync and download only)
+# --dbpath forces it to resolve all dependencies (as it thinks none are installed)
+pacman -Syw --cachedir "${PKG_CACHE_DIR}" --dbpath "${EMPTY_DB}" --noconfirm ${INSTALL_PKGS} 2>&1 | tee -a "$BUILD_LOG" || true
+
+log "Copying packages to airootfs offline storage..."
+cp "${PKG_CACHE_DIR}/"*.pkg.tar.* "${ISO_PKG_DIR}/" 2>/dev/null || true
+
+log_ok "Offline packages cached on ISO (${ISO_PKG_DIR})"
 
 # =============================================================================
 # Step 6: Build ISO with mkarchiso
