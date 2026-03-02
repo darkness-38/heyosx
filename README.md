@@ -74,22 +74,45 @@ graph TD
 
 ### 🦀 `heydm` — The Engine
 The heart of heyOS is `heydm`, a compositor that prioritizes low-latency rendering and protocol stability.
-- **Rendering:** Uses the `glow` (OpenGL) backend with automated fallbacks to `pixman` (software rendering).
-- **Input:** Native `libinput` integration for smooth touchpad gestures and mouse acceleration.
-- **Shell Support:** Full implementation of `xdg-shell` (windows) and `layer-shell` (panels/backgrounds).
-- **Architecture:** Built on the `Calloop` event loop for non-blocking I/O and state management.
+- **Rendering:** Dual-backend support using `glow` (OpenGL) for hardware acceleration and `pixman` for software fallback.
+- **Input:** Native `libinput` integration for smooth touchpad gestures, mouse acceleration, and precise keyboard routing.
+- **Shell Support:** Full implementation of `xdg-shell` (standard windows) and `layer-shell` (panels and backgrounds).
+- **Integrated Panel:** A real-time status bar displaying:
+    - 🕒 **Clock:** Live localized time and date.
+    - 🔋 **Power:** Intelligent battery monitoring with charging indicators and status icons (█, ▓, ▒, ░).
+    - 🌐 **Network:** Automatic interface discovery (WiFi/Ethernet) and status reporting.
+- **App Launcher:** A Super+D triggered overlay that scans standard XDG paths, parses `.desktop` files, and supports fuzzy searching.
 
 ### 🎨 `hey-greeter` — The Interface
 A stunning entry point that bridges the gap between the kernel and the desktop.
-- **UI Framework:** Leveraging **Slint** for declarative, compiled UI that runs on the GPU.
+- **UI Framework:** Built with **Slint**, compiling declarative UI code into highly optimized GPU-accelerated binaries.
 - **Logic:** Communicates with `greetd` via JSON-RPC over Unix sockets (`greetd-ipc`).
-- **Discovery:** Intelligent scanning of `/etc/passwd` for real users and `/usr/share/wayland-sessions` for available desktops.
+- **Discovery:** Scans `/etc/passwd` for valid users and `/usr/share/wayland-sessions` to present available desktop environments.
 
 ### 🧠 `hey-install` — The Deployment
 A CLI installer that takes the guesswork out of Arch installation.
-- **Fuzzy Autocorrect:** Don't worry about typos; the installer uses fuzzy matching for Timezones, Keymaps, and Locales.
-- **Btrfs Optimization:** Automatically creates `@` and `@home` subvolumes with `zstd` compression and `noatime` mount options.
-- **Hybrid Boot:** Supports both UEFI (via `efibootmgr`) and Legacy BIOS (via `i386-pc`) configurations.
+- **Fuzzy Autocorrect:** Intelligent matching for Timezones, Keymaps, and Locales to prevent installation failures due to typos.
+- **Btrfs Optimization:** Automatically configures `@` and `@home` subvolumes with `zstd` compression, `noatime`, and optimized commit intervals.
+- **Hybrid Boot:** Supports both UEFI (via `efibootmgr`) and Legacy BIOS configurations.
+- **Zero-Touch Mirroring:** Automatically selects the 5 fastest HTTPS mirrors via `reflector`.
+
+---
+
+## ⌨️ Keyboard Shortcuts
+
+heyOS uses a simple, modern set of keybindings for high-speed navigation.
+
+| Keybinding | Action |
+| :--- | :--- |
+| <kbd>Super</kbd> + <kbd>Enter</kbd> | Open Terminal (`alacritty`) |
+| <kbd>Super</kbd> + <kbd>D</kbd> | Toggle Application Launcher |
+| <kbd>Super</kbd> + <kbd>Q</kbd> | Close Focused Window |
+| <kbd>Alt</kbd> + <kbd>F4</kbd> | Close Focused Window |
+| <kbd>Super</kbd> + <kbd>F</kbd> | Toggle Fullscreen |
+| <kbd>Super</kbd> + <kbd>Left</kbd> | Tile Window Left |
+| <kbd>Super</kbd> + <kbd>Right</kbd> | Tile Window Right |
+| <kbd>Super</kbd> + <kbd>Tab</kbd> | Cycle Focus Between Windows |
+| <kbd>Super</kbd> + <kbd>Shift</kbd> + <kbd>E</kbd> | Exit heyOS (Logout) |
 
 ---
 
@@ -111,18 +134,18 @@ cd heyosx
 sudo ./build.sh
 ```
 
-**What happens under the hood?**
-1. **WSL Detection:** If you're on a Windows mount (`/mnt/c/...`), the script syncs the project to `/var/lib/heyos-build` to avoid NTFS overhead.
-2. **Parallel Compilation:** Rust components are compiled in parallel using `cargo`, limited to `nproc/2` to keep your system responsive.
-3. **Package Caching:** Only downloads packages once, storing them in `pkg-cache` for future offline builds.
-4. **Incremental ISOs:** `mkarchiso` is configured to reuse markers, drastically reducing re-build times.
+**Under the Hood:**
+1. **WSL Relocation:** If running in WSL, the script detects NTFS mounts and syncs the project to `/var/lib/heyos-build` to bypass Windows filesystem overhead.
+2. **Parallel Compilation:** Rust components are compiled in parallel, utilizing `nproc/2` to maximize throughput while keeping the host system responsive.
+3. **Package Caching:** Downloads packages once into `pkg-cache`, enabling rapid, offline-capable re-builds.
+4. **Surgical Cleanup:** Reuses `mkarchiso` work markers to avoid redundant package installations.
 
 ### 3. Installation
 Once booted into the ISO, simply run:
 ```bash
 sudo hey-install
 ```
-Follow the interactive prompts. The installer will guide you through disk selection, filesystem choice, and user creation.
+The installer will guide you through disk selection, filesystem choice, and user creation with interactive, fuzzy-matched prompts.
 
 ---
 
@@ -132,13 +155,13 @@ Follow the interactive prompts. The installer will guide you through disk select
 heyos/
 ├── airootfs/            # Filesystem overlay (The "Soul" of the ISO)
 │   ├── etc/             # Configs for greetd, sudo, locale, and network
-│   └── usr/local/bin/   # The intelligent hey-install script
-├── heydm/               # Custom Wayland Compositor (Rust/Smithay)
-│   ├── src/             # Rendering, input, and window logic
-│   └── Cargo.toml       # Dependencies: smithay, calloop, tracing
-├── heygreeter/          # Login Manager (Rust/Slint)
+│   └── usr/local/bin/   # Scripts: hey-install, greeter-launch
+├── heydm/               # Custom Wayland Compositor (Rust + Smithay)
+│   ├── src/             # Rendering, input, panel, and launcher logic
+│   └── Cargo.toml       # Deps: smithay, calloop, fontdue, tiny-skia
+├── heygreeter/          # Login Manager (Rust + Slint)
 │   ├── ui/              # .slint files for the visual design
-│   └── src/             # IPC logic and user discovery
+│   └── src/             # IPC logic, PAM auth, and user discovery
 ├── build.sh             # Master build script (The "Orchestrator")
 ├── packages.x86_64      # Core package list (Base + UI Stack)
 └── profiledef.sh        # Archiso metadata and permission settings
@@ -148,10 +171,10 @@ heyos/
 
 ## 🤝 Contributing
 
-We are actively looking for contributors to help shape the future of **heyOS**!
-*   **Window Management:** Help implement tiling or floating window algorithms in `heydm`.
-*   **UI/UX:** Design new themes or components for `hey-greeter`.
-*   **Tooling:** Extend `hey-install` to support more filesystems (LUKS, LVM).
+We are building the future of the Rust desktop! We welcome contributions in:
+*   **Window Management:** Implementing advanced tiling algorithms (master/stack, spiral).
+*   **UI/UX:** Enhancing the Slint-based greeter or the `heydm` panel aesthetics.
+*   **Tooling:** Adding LUKS/LVM support to `hey-install`.
 
 ---
 

@@ -1,0 +1,37 @@
+#!/bin/bash
+
+# Türkçe systemctl komutları
+
+if [ "$#" -lt 2 ]; then
+    echo "Kullanım: servis <başlat|durdur|etkinlestir|yenidenbaşlat|durum> <servis_adı>"
+    exit 1
+fi
+
+komut=$1
+shift
+servis="$@"
+
+case "$komut" in
+    başlat)
+        sudo systemctl start $servis
+        ;;
+    durdur)
+        sudo systemctl stop $servis
+        ;;
+    yenidenbaşlat)
+        sudo systemctl restart $servis
+        ;;
+    durum)
+        systemctl status $servis
+        ;;
+    etkinleştir)
+        sudo systemctl enable $servis
+        ;;
+    devre-dışı)
+        sudo systemctl disable $servis
+        ;;
+    *)
+        echo "Geçersiz komut: $komut"
+        echo "Kullanım: servis <başlat|durdur|yenidenbaşlat|durum|etkinleştir|devre-dışı> <servis_adı>"
+        ;;
+esac

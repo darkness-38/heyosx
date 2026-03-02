@@ -21,7 +21,8 @@ fn detect_users() -> Vec<String> {
                 if let Ok(uid) = parts[2].parse::<u32>() {
                     // Filter for normal users (Arch standard is 1000+)
                     // Also include 'hey' live user specifically if detected
-                    if uid >= 1000 || parts[0] == "hey" {
+                    // Explicitly exclude 'nobody' which often has a high UID (65534)
+                    if (uid >= 1000 || parts[0] == "hey") && parts[0] != "nobody" {
                         users.push(parts[0].to_string());
                     }
                 }

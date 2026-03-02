@@ -6,6 +6,7 @@
 # =============================================================================
 
 set -euo pipefail
+export LC_ALL=C
 
 # ---- Color codes ----
 RED='\033[0;31m'
@@ -132,7 +133,7 @@ preflight_checks() {
     fi
 
     log_info "Checking network connectivity..."
-    if ! ping -c 1 -W 2 archlinux.org &>/dev/null; then
+    if ! curl -Is --connect-timeout 5 https://google.com/generate_204 &>/dev/null; then
         if [[ ! -d "$OFFLINE_REPO" ]]; then
             log_err "No network and no offline cache found. Installation cannot continue."
             exit 1
@@ -411,12 +412,16 @@ configure_system() {
     cp /usr/bin/hey-greeter "$MOUNT_POINT/usr/bin/hey-greeter"
     chmod 755 "$MOUNT_POINT/usr/bin/heydm" "$MOUNT_POINT/usr/bin/hey-greeter"
 
+    log_info "Deploying Turkish command wrappers..."
+    cp -r /usr/local/bin/transTR "$MOUNT_POINT/usr/local/bin/"
+    chmod +x "$MOUNT_POINT/usr/local/bin/transTR/"*
+
     log_info "Setting up Wayland session and Greetd configuration..."
     mkdir -p "$MOUNT_POINT/usr/share/wayland-sessions"
     cat << 'EOF' > "$MOUNT_POINT/usr/share/wayland-sessions/heydm.desktop"
 [Desktop Entry]
 Name=heyDM
-Exec=cage -d -s -- /usr/bin/heydm
+Exec=/usr/local/bin/hey-heydm-launch
 Type=Application
 EOF
 
@@ -425,15 +430,40 @@ EOF
 [terminal]
 vt = 1
 [default_session]
-command = "cage -s -- /usr/bin/hey-greeter"
+command = "/usr/local/bin/hey-greeter-launch"
 user = "greeter"
 EOF
+
+    log_info "Deploying hey-greeter and hey-heydm launcher scripts..."
+    mkdir -p "$MOUNT_POINT/usr/local/bin"
+    cat << 'EOF' > "$MOUNT_POINT/usr/local/bin/hey-greeter-launch"
+#!/bin/sh
+export WLR_RENDERER=pixman
+export WLR_RENDERER_ALLOW_SOFTWARE=1
+export WLR_NO_HARDWARE_CURSORS=1
+export LIBGL_ALWAYS_SOFTWARE=1
+export SLINT_BACKEND=winit-skia
+export GALLIUM_DRIVER=llvmpipe
+exec cage -s -- /usr/bin/hey-greeter
+EOF
+
+    cat << 'EOF' > "$MOUNT_POINT/usr/local/bin/hey-heydm-launch"
+#!/bin/sh
+export WLR_RENDERER=pixman
+export WLR_RENDERER_ALLOW_SOFTWARE=1
+export WLR_NO_HARDWARE_CURSORS=1
+export LIBGL_ALWAYS_SOFTWARE=1
+export GALLIUM_DRIVER=llvmpipe
+exec cage -d -s -- /usr/bin/heydm
+EOF
+    chmod +x "$MOUNT_POINT/usr/local/bin/hey-greeter-launch" "$MOUNT_POINT/usr/local/bin/hey-heydm-launch"
 
     log_info "Entering chroot for localized configuration..."
     # CHROOT setup
     cat << CHROOT_SCRIPT > "$MOUNT_POINT/root/hey-setup.sh"
 #!/bin/bash
 set -e
+export LC_ALL=C
 echo "[CHROOT] Setting timezone to ${SELECTED_TIMEZONE}..."
 ln -sf /usr/share/zoneinfo/${SELECTED_TIMEZONE} /etc/localtime
 hwclock --systohc

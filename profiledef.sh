@@ -21,6 +21,7 @@ file_permissions=(
   ["/usr/bin/heydm"]="0:0:755"
   ["/usr/bin/hey-greeter"]="0:0:755"
   ["/usr/local/bin/hey-install"]="0:0:755"
+  ["/usr/local/bin/transTR/*"]="0:0:755"
   ["/etc/shadow"]="0:0:400"
   ["/etc/gshadow"]="0:0:400"
   ["/etc/greetd/config.toml"]="0:0:644"

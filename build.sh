@@ -238,26 +238,26 @@ mkdir -p "${AIROOTFS}/etc/greetd"
 
 # Helper for greetd config
 write_greetd_config() {
-    local cmd="$1"
+    local binary="$1"
     cat << EOF > "${AIROOTFS}/etc/greetd/config.toml"
 [terminal]
 vt = 1
 [default_session]
-command = "env WLR_RENDERER=pixman WLR_NO_HARDWARE_CURSORS=1 $cmd"
+command = "/usr/local/bin/hey-greeter-launch $binary"
 user = "hey"
 EOF
 }
 
 if $GREETER_ONLY; then
     cp "${BUILD_TMP}/heygreeter/target/release/hey-greeter" "${AIROOTFS}/usr/bin/hey-greeter"
-    write_greetd_config "cage -s -- /usr/bin/hey-greeter"
+    write_greetd_config "/usr/bin/hey-greeter"
 elif $HEYDM_ONLY; then
     cp "${BUILD_TMP}/heydm/target/release/heydm" "${AIROOTFS}/usr/bin/heydm"
-    write_greetd_config "cage -s -- /usr/bin/heydm"
+    write_greetd_config "/usr/bin/heydm"
 else
     cp "${BUILD_TMP}/heydm/target/release/heydm" "${AIROOTFS}/usr/bin/heydm"
     cp "${BUILD_TMP}/heygreeter/target/release/hey-greeter" "${AIROOTFS}/usr/bin/hey-greeter"
-    write_greetd_config "cage -s -- /usr/bin/hey-greeter"
+    write_greetd_config "/usr/bin/hey-greeter"
 fi
 
 log_ok "Binaries deployed"
@@ -271,6 +271,8 @@ log_step "Step 5: Permissions & File Normalization"
 chmod 755 "${AIROOTFS}/usr/bin/heydm" 2>/dev/null || true
 chmod 755 "${AIROOTFS}/usr/bin/hey-greeter" 2>/dev/null || true
 chmod 755 "${AIROOTFS}/usr/local/bin/hey-install"
+chmod 755 "${AIROOTFS}/usr/local/bin/hey-greeter-launch"
+chmod 755 "${AIROOTFS}/usr/local/bin/hey-heydm-launch"
 chmod 755 "${AIROOTFS}/root/customize_airootfs.sh"
 chmod 440 "${AIROOTFS}/etc/sudoers.d/00-heyos" 2>/dev/null || true
 

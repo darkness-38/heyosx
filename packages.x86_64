@@ -6,7 +6,6 @@
 # ---- System Core ----
 base
 linux
-# replace generic linux-firmware with essentials for faster builds
 linux-firmware-whence
 linux-firmware-intel
 linux-firmware-amdgpu
@@ -44,6 +43,7 @@ mesa-utils
 seatd
 xorg-xwayland
 cage
+pixman
 
 # ---- Networking ----
 networkmanager
@@ -85,15 +85,10 @@ firefox
 gcc
 glibc
 
-# ---- PAM ----
+# ---- PAM / Greeter ----
 pam
 greetd
-cage
-noto-fonts
-wayland
-libxkbcommon
 fontconfig
-mesa
 polkit
 
 # ---- D-Bus (required by many services) ----
