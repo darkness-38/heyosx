@@ -5,149 +5,204 @@
 // Uses a GlesFrame obtained from the winit/DRM backend's render surface.
 // =============================================================================
 
-use smithay::backend::renderer::Frame;
-use smithay::output::Output;
-use smithay::utils::{Physical, Rectangle, Size};
+use smithay::backend::renderer::{Frame, Renderer as SmithayRenderer, ImportAll, ImportMemWl, ImportDmaWl};
+use smithay::utils::{Physical, Rectangle, Size, Point, Scale};
+use smithay::backend::renderer::element::surface::{
+    render_elements_from_surface_tree, WaylandSurfaceRenderElement,
+};
+use smithay::backend::renderer::element::Kind;
+use smithay::backend::renderer::utils::draw_render_elements;
+use tiny_skia::{Pixmap, Paint, FillRule, PathBuilder, Color, Rect, Transform as SkiaTransform};
 
 use crate::state::HeyDM;
-
-/// Color constants for the heyOS desktop theme (End-4 inspired)
-pub mod colors {
-    pub const BG_DARK: [f32; 4]            = [0.04, 0.04, 0.06, 1.0];
-    pub const PANEL_BG: [f32; 4]           = [0.08, 0.08, 0.12, 0.95];
-    pub const ACCENT_CRIMSON: [f32; 4]     = [0.83, 0.23, 0.28, 1.0];
-    pub const ACCENT_CYAN: [f32; 4]        = [0.29, 0.70, 0.83, 1.0];
-    pub const LAUNCHER_BG: [f32; 4]        = [0.06, 0.06, 0.09, 0.98];
-    pub const BORDER_FOCUSED: [f32; 4]     = [0.83, 0.23, 0.28, 1.0]; // Crimson
-    pub const BORDER_UNFOCUSED: [f32; 4]   = [0.15, 0.15, 0.20, 0.60];
-}
-
-pub const PANEL_HEIGHT: i32 = 44;
-pub const PANEL_MARGIN: i32 = 10;
-pub const BORDER_WIDTH: i32 = 3;
-
-/// Build a Rectangle from (x, y, w, h)
-fn rect(x: i32, y: i32, w: i32, h: i32) -> Rectangle<i32, Physical> {
-    Rectangle::new((x, y).into(), (w, h).into())
-}
 
 pub struct Renderer;
 
 impl Renderer {
-    /// Render a full frame into the given frame.
-    pub fn render_frame<F: Frame>(
+    /// Gather Wayland surface elements before starting the frame to avoid double borrow
+    pub fn gather_elements<R>(
         state: &HeyDM,
-        frame: &mut F,
-        _output: &Output,
-        output_size: Size<i32, Physical>,
-    ) -> Result<(), Box<dyn std::error::Error>> 
-    where F::Error: 'static
+        renderer: &mut R,
+    ) -> Vec<WaylandSurfaceRenderElement<R>>
+    where 
+        R: SmithayRenderer + ImportAll + ImportMemWl + ImportDmaWl + 'static,
+        R::TextureId: Clone + 'static,
     {
-        // ---- 1. Background ----
-        frame.clear(
-            colors::BG_DARK.into(),
-            &[rect(0, 0, output_size.w, output_size.h)],
-        )?;
+        let mut render_elements = Vec::new();
+        for window in state.window_manager.windows().iter() {
+            let geom = window.geometry();
+            if let Some(surface) = window.wl_surface() {
+                let location = Point::from((geom.loc.x, geom.loc.y));
+                let elements = render_elements_from_surface_tree(
+                    renderer,
+                    &surface,
+                    location,
+                    Scale::from(1.0),
+                    1.0,
+                    Kind::Unspecified,
+                );
+                render_elements.extend(elements);
+            }
+        }
+        render_elements
+    }
 
-        // ---- 2. Windows ----
+    /// Draw the 1:1 UI to a Pixmap
+    pub fn draw_ui(state: &HeyDM) -> Pixmap {
+        let output_size = state.output_size;
+        let mut pixmap = Pixmap::new(output_size.w as u32, output_size.h as u32).unwrap();
+        pixmap.fill(Color::from_rgba8(20, 18, 25, 255));
+
+        let mut paint = Paint::default();
+        paint.anti_alias = true;
+
+        // Fluid Background Shapes
+        paint.set_color_rgba8(35, 30, 45, 255);
+        let mut pb = PathBuilder::new();
+        pb.move_to(0.0, 0.0);
+        pb.cubic_to(300.0, 100.0, 500.0, -100.0, 800.0, 200.0);
+        pb.cubic_to(1000.0, 500.0, 600.0, 800.0, 200.0, 600.0);
+        pb.close();
+        if let Some(path) = pb.finish() {
+            pixmap.fill_path(&path, &paint, FillRule::Winding, SkiaTransform::identity(), None);
+        }
+
+        // Window Decorations (Shadows and Borders)
         let focused_idx = state.window_manager.windows().len().checked_sub(1);
         for (idx, window) in state.window_manager.windows().iter().enumerate() {
             let geom = window.geometry();
             let is_focused = Some(idx) == focused_idx;
-            let border_color = if is_focused {
-                colors::BORDER_FOCUSED.into()
-            } else {
-                colors::BORDER_UNFOCUSED.into()
+            
+            let x = geom.loc.x as f32;
+            let y = geom.loc.y as f32;
+            let w = geom.size.w as f32;
+            let h = geom.size.h as f32;
+            let radius = 12.0;
+
+            // 1. Draw Shadow (Simple rounded rect with transparency)
+            let shadow_offset = 6.0;
+            let shadow_blur = 12.0;
+            paint.set_color_rgba8(0, 0, 0, 100);
+            let shadow_rect = Rect::from_xywh(
+                x - shadow_blur/2.0 + shadow_offset, 
+                y - shadow_blur/2.0 + shadow_offset, 
+                w + shadow_blur, 
+                h + shadow_blur
+            ).unwrap();
+            let mut shadow_pb = PathBuilder::new();
+            Self::draw_rounded_rect(&mut shadow_pb, shadow_rect, radius + 4.0);
+            if let Some(path) = shadow_pb.finish() {
+                pixmap.fill_path(&path, &paint, FillRule::Winding, SkiaTransform::identity(), None);
+            }
+
+            // 2. Draw Rounded Border
+            let b = 2.0;
+            let border_color = if is_focused { 
+                Color::from_rgba8(216, 180, 204, 255) // heyOS Pink
+            } else { 
+                Color::from_rgba8(38, 35, 45, 255)    // Deep Gray
             };
-
-            // Draw thick borders
-            let b = BORDER_WIDTH;
-            frame.clear(border_color, &[
-                rect(geom.loc.x - b, geom.loc.y - b, geom.size.w + 2 * b, b), // Top
-                rect(geom.loc.x - b, geom.loc.y + geom.size.h, geom.size.w + 2 * b, b), // Bottom
-                rect(geom.loc.x - b, geom.loc.y, b, geom.size.h), // Left
-                rect(geom.loc.x + geom.size.w, geom.loc.y, b, geom.size.h), // Right
-            ])?;
-        }
-
-        // ---- 3. Island Panel (Floating) ----
-        let panel_w = output_size.w - (PANEL_MARGIN * 2);
-        let panel_x = PANEL_MARGIN;
-        let panel_y = PANEL_MARGIN;
-
-        // Main Panel Bar
-        frame.clear(
-            colors::PANEL_BG.into(),
-            &[rect(panel_x, panel_y, panel_w, PANEL_HEIGHT)],
-        )?;
-
-        // Decorative Accent Line (Bottom of panel)
-        frame.clear(
-            colors::ACCENT_CRIMSON.into(),
-            &[rect(panel_x + 20, panel_y + PANEL_HEIGHT - 2, 60, 2)],
-        )?;
-
-        // ---- 4. Launcher (Grid Style) ----
-        if state.launcher.is_visible() {
-            // Dark overlay
-            frame.clear(
-                [0.0_f32, 0.0, 0.0, 0.7].into(),
-                &[rect(0, 0, output_size.w, output_size.h)],
-            )?;
-
-            let lw = 800.min(output_size.w - 100).max(0);
-            let lh = 600.min(output_size.h - 200).max(0);
-            let lx = (output_size.w - lw) / 2;
-            let ly = (output_size.h - lh) / 2;
-
-            // Launcher Box
-            frame.clear(colors::LAUNCHER_BG.into(), &[rect(lx, ly, lw, lh)])?;
-            
-            // Search Bar Area
-            frame.clear(
-                [0.12_f32, 0.12, 0.18, 1.0].into(),
-                &[rect(lx + 20, ly + 20, lw - 40, 50)],
-            )?;
-
-            // Grid Items
-            let cols = 4;
-            let item_w = (lw - 60) / cols;
-            let item_h = 100;
-            
-            let visible_apps = state.launcher.visible_entries();
-            let count = visible_apps.len().min(12);
-            
-            for i in 0..count { // Draw dynamically based on available apps
-                let row = i as i32 / cols;
-                let col = i as i32 % cols;
-                let ix = lx + 30 + (col * item_w);
-                let iy = ly + 90 + (row * item_h);
-                
-                let is_selected = state.launcher.selected_index() == Some(i as usize);
-                let item_bg = if is_selected {
-                    let mut c = colors::ACCENT_CRIMSON;
-                    c[3] = 0.2;
-                    c.into()
-                } else {
-                    [1.0_f32, 1.0, 1.0, 0.03].into()
-                };
-
-                frame.clear(item_bg, &[rect(ix + 5, iy + 5, item_w - 10, item_h - 10)])?;
-                
-                // Icon Placeholder
-                frame.clear(
-                    if is_selected { colors::ACCENT_CRIMSON.into() } else { colors::ACCENT_CYAN.into() },
-                    &[rect(ix + (item_w / 2) - 15, iy + 20, 30, 30)]
-                )?;
+            paint.set_color(border_color);
+            let border_rect = Rect::from_xywh(x - b, y - b, w + 2.0 * b, h + 2.0 * b).unwrap();
+            let mut border_pb = PathBuilder::new();
+            Self::draw_rounded_rect(&mut border_pb, border_rect, radius + b);
+            if let Some(path) = border_pb.finish() {
+                pixmap.fill_path(&path, &paint, FillRule::Winding, SkiaTransform::identity(), None);
             }
         }
 
-        // ---- 5. Cursor (Glow) ----
-        let (cx, cy) = state.window_manager.cursor_position();
-        frame.clear(
-            colors::ACCENT_CYAN.into(),
-            &[rect(cx as i32 - 4, cy as i32 - 4, 8, 8)],
+        // Top Bar Pills
+        paint.set_color_rgba8(25, 22, 30, 200);
+        let pill_y = 10.0;
+        let pill_h = 32.0;
+        pixmap.fill_rect(Rect::from_xywh(10.0, pill_y, 240.0, pill_h).unwrap(), &paint, SkiaTransform::identity(), None);
+        pixmap.fill_rect(Rect::from_xywh(260.0, pill_y, 180.0, pill_h).unwrap(), &paint, SkiaTransform::identity(), None);
+        let center_x = output_size.w as f32 / 2.0;
+        pixmap.fill_rect(Rect::from_xywh(center_x - 150.0, pill_y, 300.0, pill_h).unwrap(), &paint, SkiaTransform::identity(), None);
+        pixmap.fill_rect(Rect::from_xywh(output_size.w as f32 - 450.0, pill_y, 180.0, pill_h).unwrap(), &paint, SkiaTransform::identity(), None);
+        pixmap.fill_rect(Rect::from_xywh(output_size.w as f32 - 260.0, pill_y, 250.0, pill_h).unwrap(), &paint, SkiaTransform::identity(), None);
+
+        // Sidebar
+        pixmap.fill_rect(Rect::from_xywh(10.0, 50.0, 400.0, output_size.h as f32 - 60.0).unwrap(), &paint, SkiaTransform::identity(), None);
+
+        // Settings Window
+        let sw_w = 700.0;
+        let sw_h = 450.0;
+        let sw_x = (output_size.w as f32 - sw_w) / 2.0 + 100.0;
+        let sw_y = (output_size.h as f32 - sw_h) / 2.0 - 50.0;
+        pixmap.fill_rect(Rect::from_xywh(sw_x, sw_y, sw_w, sw_h).unwrap(), &paint, SkiaTransform::identity(), None);
+
+        // Blob Clock
+        paint.set_color_rgba8(120, 100, 125, 220);
+        let cw_x = output_size.w as f32 / 2.0 + 150.0;
+        let cw_y = output_size.h as f32 / 2.0;
+        let mut pb_clock = PathBuilder::new();
+        pb_clock.move_to(cw_x - 90.0, cw_y);
+        pb_clock.cubic_to(cw_x - 90.0, cw_y - 110.0, cw_x + 90.0, cw_y - 110.0, cw_x + 90.0, cw_y);
+        pb_clock.cubic_to(cw_x + 90.0, cw_y + 110.0, cw_x - 90.0, cw_y + 110.0, cw_x - 90.0, cw_y);
+        if let Some(path) = pb_clock.finish() {
+            pixmap.fill_path(&path, &paint, FillRule::Winding, SkiaTransform::identity(), None);
+        }
+
+        pixmap
+    }
+
+    /// Helper to draw a rounded rectangle path
+    fn draw_rounded_rect(pb: &mut PathBuilder, rect: Rect, radius: f32) {
+        let left = rect.left();
+        let top = rect.top();
+        let right = rect.right();
+        let bottom = rect.bottom();
+        
+        pb.move_to(left + radius, top);
+        pb.line_to(right - radius, top);
+        pb.quad_to(right, top, right, top + radius);
+        pb.line_to(right, bottom - radius);
+        pb.quad_to(right, bottom, right - radius, bottom);
+        pb.line_to(left + radius, bottom);
+        pb.quad_to(left, bottom, left, bottom - radius);
+        pb.line_to(left, top + radius);
+        pb.quad_to(left, top, left + radius, top);
+        pb.close();
+    }
+
+    pub fn render_frame<R, F>(
+        state: &HeyDM,
+        renderer: &mut R,
+        frame: &mut F,
+        render_elements: &[WaylandSurfaceRenderElement<R>],
+        ui_texture: &R::TextureId,
+        output_size: Size<i32, Physical>,
+    ) -> Result<(), Box<dyn std::error::Error>> 
+    where 
+        R: SmithayRenderer + ImportAll + ImportMemWl + ImportDmaWl + 'static,
+        F: Frame<Error = R::Error, TextureId = R::TextureId>,
+        R::TextureId: Clone + 'static,
+    {
+        // 1. Draw UI Texture
+        frame.clear([0.0, 0.0, 0.0, 1.0], &[Rectangle::new((0, 0).into(), output_size)])?;
+        
+        Frame::draw_texture(
+            frame,
+            ui_texture,
+            Rectangle::new((0, 0).into(), output_size),
+            Rectangle::new((0, 0).into(), output_size),
+            &[],
+            1.0,
         )?;
+
+        // 2. Real Wayland windows and surface elements are drawn here.
+        // We've moved the border/shadow logic to draw_ui (tiny-skia) for high-fidelity effects.
+
+        // Draw Wayland surface elements
+        if !render_elements.is_empty() {
+            let damage = vec![Rectangle::new((0, 0).into(), output_size)];
+            let _ = draw_render_elements(renderer, frame, render_elements, &damage);
+        }
+
+        // 3. Cursor
+        let (cx, cy) = state.window_manager.cursor_position();
+        frame.clear([1.0, 1.0, 1.0, 1.0].into(), &[Rectangle::new((cx as i32 - 2, cy as i32 - 2).into(), (4, 4).into())])?;
 
         Ok(())
     }
