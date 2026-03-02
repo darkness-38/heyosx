@@ -1,6 +1,6 @@
 NAME="heyOS"
 PRETTY_NAME="heyOS"
-ID=heyos
+ID=heyOS
 BUILD_ID=rolling
 ANSI_COLOR="38;2;23;147;209"
 HOME_URL="https://os.iloveteto.org/"
@@ -8,4 +8,4 @@ DOCUMENTATION_URL="https://os.iloveteto.org/wiki"
 SUPPORT_URL="https://os.iloveteto.org/support"
 BUG_REPORT_URL="https://os.iloveteto.org/bugs"
 PRIVACY_POLICY_URL="https://os.iloveteto.org/privacy"
-LOGO=archlinux-logo
+LOGO=heyos-logo
