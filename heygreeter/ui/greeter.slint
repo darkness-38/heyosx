@@ -280,4 +280,20 @@ export component AppWindow inherits Window {
             }
         }
     }
+
+    // ---- Bottom Left: Branding ----
+    VerticalLayout {
+        x: 30px;
+        y: parent.height - self.height - 30px;
+        width: 200px;
+        height: 56px;
+        alignment: end;
+
+        Text {
+            text: "heyOS Team";
+            color: #ffffffaa;
+            font-size: 14px;
+            font-weight: 600;
+        }
+    }
 }
