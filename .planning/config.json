@@ -1,0 +1,6 @@
+{
+  "project_name": "heyOS",
+  "producer": "heyOS Team",
+  "ui_ux_style": "Detailed, highly animated, similar to end-4 hyprland dots",
+  "tech_stack": ["Rust", "Smithay", "Slint", "Wayland", "Arch Linux"]
+}
