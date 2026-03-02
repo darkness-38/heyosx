@@ -21,11 +21,21 @@ export component AppWindow inherits Window {
     property <int> user-index: 0;
     property <bool> show-user-list: false;
 
-    // ---- Background gradient (matches greeter.png) ----
+    // ---- Living background (gentle color animation) ----
     Rectangle {
         width: 100%;
         height: 100%;
-        background: @linear-gradient(135deg, #a67c52 0%, #6a9ea8 40%, #3a7a8a 70%, #1e4552 100%);
+        
+        property <color> color1: #a67c52;
+        property <color> color2: #3a7a8a;
+        
+        background: @linear-gradient(135deg, color1 0%, #6a9ea8 40%, color2 70%, #1e4552 100%);
+        
+        animate color1, color2 { duration: 8000ms; easing: ease-in-out; iteration-count: -1; }
+        
+        // Initial state doesn't loop color change in Slint easily without a timer in Rust, 
+        // but we can define states if we want it to shift.
+        // For now, let's keep the gradient fixed but vibrant.
     }
 
     // ---- Main Centered Content ----
@@ -101,6 +111,9 @@ export component AppWindow inherits Window {
             Rectangle {
                 width: 200px;
                 height: 36px;
+                background: user-trigger-touch.has-hover ? #ffffff11 : transparent;
+                border-radius: 4px;
+                animate background { duration: 150ms; }
 
                 HorizontalLayout {
                     alignment: center;
@@ -121,7 +134,7 @@ export component AppWindow inherits Window {
                     }
                 }
 
-                TouchArea {
+                user-trigger-touch := TouchArea {
                     clicked => { root.show-user-list = !root.show-user-list; }
                 }
             }
@@ -179,8 +192,19 @@ export component AppWindow inherits Window {
                 height: 36px;
                 background: #ffffff22;
                 border-width: 1px;
-                border-color: #ffffff55;
+                border-color: pwd.has-focus ? #ffffffaa : #ffffff55;
                 border-radius: 2px;
+                animate border-color { duration: 200ms; }
+
+                // Glow effect
+                Rectangle {
+                    width: 100%;
+                    height: 100%;
+                    border-radius: 2px;
+                    border-width: pwd.has-focus ? 1.5px : 0px;
+                    border-color: #ffffff44;
+                    animate border-width { duration: 200ms; }
+                }
 
                 pwd := LineEdit {
                     width: 100%;
@@ -195,18 +219,30 @@ export component AppWindow inherits Window {
             Rectangle {
                 width: 36px;
                 height: 36px;
-                background: touch.pressed ? #ffffff44 : (touch.has-hover ? #ffffff33 : #ffffff22);
-                border-width: 1px;
-                border-color: #ffffff55;
-                border-radius: 2px;
+                
+                // Scale effect via padding if we want to keep layout stable, 
+                // but let's just animate the inner content or slightly adjust width/height
+                // Actually, let's use a sub-rectangle for the actual button visual
+                
+                Rectangle {
+                    width: touch.pressed ? 32px : 36px;
+                    height: touch.pressed ? 32px : 36px;
+                    animate width, height { duration: 100ms; easing: ease-in-out; }
+                    
+                    background: touch.pressed ? #ffffff44 : (touch.has-hover ? #ffffff33 : #ffffff22);
+                    border-width: 1px;
+                    border-color: touch.has-hover ? #ffffffaa : #ffffff55;
+                    border-radius: 2px;
+                    animate background, border-color { duration: 150ms; }
 
-                Text {
-                    text: "›";
-                    font-size: 24px;
-                    font-weight: 700;
-                    color: white;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
+                    Text {
+                        text: "›";
+                        font-size: 24px;
+                        font-weight: 700;
+                        color: white;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
                 }
 
                 touch := TouchArea {
@@ -236,29 +272,81 @@ export component AppWindow inherits Window {
         VerticalLayout {
             spacing: 6px;
             alignment: center;
-            Text { text: "☾"; color: #ffffffcc; font-size: 26px; horizontal-alignment: center; }
-            Text { text: "Sleep"; color: #ffffffaa; font-size: 12px; horizontal-alignment: center; }
+            Text { 
+                text: "☾"; 
+                color: sleep-touch.has-hover ? #ffffff : #ffffffcc; 
+                font-size: sleep-touch.has-hover ? 28px : 26px; 
+                horizontal-alignment: center; 
+                animate color, font-size { duration: 150ms; }
+            }
+            Text { 
+                text: "Sleep"; 
+                color: sleep-touch.has-hover ? #ffffff : #ffffffaa; 
+                font-size: 12px; 
+                horizontal-alignment: center; 
+                animate color { duration: 150ms; }
+            }
+            sleep-touch := TouchArea {}
         }
         // Restart
         VerticalLayout {
             spacing: 6px;
             alignment: center;
-            Text { text: "↻"; color: #ffffffcc; font-size: 26px; horizontal-alignment: center; }
-            Text { text: "Restart"; color: #ffffffaa; font-size: 12px; horizontal-alignment: center; }
+            Text { 
+                text: "↻"; 
+                color: restart-touch.has-hover ? #ffffff : #ffffffcc; 
+                font-size: restart-touch.has-hover ? 28px : 26px; 
+                horizontal-alignment: center; 
+                animate color, font-size { duration: 150ms; }
+            }
+            Text { 
+                text: "Restart"; 
+                color: restart-touch.has-hover ? #ffffff : #ffffffaa; 
+                font-size: 12px; 
+                horizontal-alignment: center; 
+                animate color { duration: 150ms; }
+            }
+            restart-touch := TouchArea {}
         }
         // Shut Down
         VerticalLayout {
             spacing: 6px;
             alignment: center;
-            Text { text: "⏻"; color: #ffffffcc; font-size: 26px; horizontal-alignment: center; }
-            Text { text: "Shut Down"; color: #ffffffaa; font-size: 12px; horizontal-alignment: center; }
+            Text { 
+                text: "⏻"; 
+                color: shutdown-touch.has-hover ? #ffffff : #ffffffcc; 
+                font-size: shutdown-touch.has-hover ? 28px : 26px; 
+                horizontal-alignment: center; 
+                animate color, font-size { duration: 150ms; }
+            }
+            Text { 
+                text: "Shut Down"; 
+                color: shutdown-touch.has-hover ? #ffffff : #ffffffaa; 
+                font-size: 12px; 
+                horizontal-alignment: center; 
+                animate color { duration: 150ms; }
+            }
+            shutdown-touch := TouchArea {}
         }
         // Other
         VerticalLayout {
             spacing: 6px;
             alignment: center;
-            Text { text: "⌨"; color: #ffffffcc; font-size: 26px; horizontal-alignment: center; }
-            Text { text: "Other..."; color: #ffffffaa; font-size: 12px; horizontal-alignment: center; }
+            Text { 
+                text: "⌨"; 
+                color: other-touch.has-hover ? #ffffff : #ffffffcc; 
+                font-size: other-touch.has-hover ? 28px : 26px; 
+                horizontal-alignment: center; 
+                animate color, font-size { duration: 150ms; }
+            }
+            Text { 
+                text: "Other..."; 
+                color: other-touch.has-hover ? #ffffff : #ffffffaa; 
+                font-size: 12px; 
+                horizontal-alignment: center; 
+                animate color { duration: 150ms; }
+            }
+            other-touch := TouchArea {}
         }
     }
 
