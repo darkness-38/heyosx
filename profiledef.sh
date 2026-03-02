@@ -6,7 +6,7 @@
 
 iso_name="heyOS"
 iso_label="HEYOS_$(date --date="@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y%m)"
-iso_publisher="heyOS Project"
+iso_publisher="heyOS Team"
 iso_application="heyOS Live Environment"
 iso_version="$(date --date="@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y.%m.%d)"
 install_dir="arch"
