@@ -17,10 +17,18 @@ use tracing::{debug, info};
 pub struct WindowElement {
     /// The XDG toplevel surface
     toplevel: ToplevelSurface,
-    /// Position of the window in output coordinates
+    /// Target position of the window in output coordinates
     position: Point<i32, Logical>,
-    /// Size of the window
+    /// Target size of the window
     size: Size<i32, Logical>,
+    /// Current animated position
+    pub current_position: Point<f64, Logical>,
+    /// Current animated size
+    pub current_size: Size<f64, Logical>,
+    /// Current opacity (0.0 to 1.0)
+    pub opacity: f32,
+    /// Current scale (e.g., 1.0 is normal)
+    pub scale: f32,
     /// Whether the window is fullscreen
     fullscreen: bool,
     /// Saved geometry before fullscreen (for restore)
@@ -30,10 +38,16 @@ pub struct WindowElement {
 impl WindowElement {
     /// Create a new window element from an XDG toplevel surface
     pub fn new(toplevel: ToplevelSurface) -> Self {
+        let position = Point::from((100, 100));
+        let size = Size::from((800, 600));
         Self {
             toplevel,
-            position: Point::from((100, 100)),
-            size: Size::from((800, 600)),
+            position,
+            size,
+            current_position: Point::from((position.x as f64, position.y as f64)),
+            current_size: Size::from((size.w as f64, size.h as f64)),
+            opacity: 0.0, // Start invisible for fade-in
+            scale: 0.9,   // Start slightly smaller for scale-in
             fullscreen: false,
             saved_geometry: None,
         }
@@ -119,7 +133,7 @@ impl WindowManager {
             focused: None,
             cursor_pos: (0.0, 0.0),
             grab: None,
-            panel_height: 32,
+            panel_height: 40,
         }
     }
 
@@ -410,6 +424,31 @@ impl WindowManager {
         if self.grab.is_some() {
             debug!("Grab ended");
             self.grab = None;
+        }
+    }
+
+    /// Update animations for all windows
+    pub fn update_animations(&mut self, dt: std::time::Duration) {
+        let dt_secs = dt.as_secs_f64();
+        // Easing factor (lower is smoother, higher is faster)
+        let factor = 12.0;
+
+        for window in &mut self.windows {
+            // Update position
+            let target_pos = window.position;
+            window.current_position.x += (target_pos.x as f64 - window.current_position.x) * factor * dt_secs;
+            window.current_position.y += (target_pos.y as f64 - window.current_position.y) * factor * dt_secs;
+
+            // Update size
+            let target_size = window.size;
+            window.current_size.w += (target_size.w as f64 - window.current_size.w) * factor * dt_secs;
+            window.current_size.h += (target_size.h as f64 - window.current_size.h) * factor * dt_secs;
+
+            // Update opacity (target is always 1.0 when active)
+            window.opacity += (1.0 - window.opacity) * factor as f32 * dt_secs as f32;
+
+            // Update scale (target is always 1.0)
+            window.scale += (1.0 - window.scale) * factor as f32 * dt_secs as f32;
         }
     }
 }
