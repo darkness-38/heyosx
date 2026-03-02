@@ -8,8 +8,9 @@ use std::time::Duration;
 
 use calloop::{EventLoop, LoopHandle, LoopSignal};
 use smithay::backend::renderer::glow::GlowRenderer;
-use smithay::backend::renderer::{Frame, Renderer as SmithayRenderer};
+use smithay::backend::renderer::{Frame, Renderer as SmithayRenderer, ImportMem};
 use smithay::backend::winit::{self, WinitEvent};
+use smithay::backend::allocator::Fourcc;
 
 use smithay::delegate_compositor;
 use smithay::delegate_data_device;
@@ -143,7 +144,7 @@ impl HeyDM {
         let socket_name = listening_socket.socket_name().to_os_string();
         info!("Wayland socket: {:?}", socket_name);
         
-        // Save the original display for nested mode before we potentially overwrite it
+        // Save the original display for nested mode
         let original_wayland_display = std::env::var("WAYLAND_DISPLAY").ok();
 
         // ListeningSocketSource implements calloop 0.14 EventSource natively
@@ -157,7 +158,6 @@ impl HeyDM {
         })?;
 
         // Poll the Wayland display fd for client requests
-        // Clone the fd so we don't hold a borrow on `display`
         let poll_fd = display.backend().poll_fd().try_clone_to_owned()?;
         loop_handle.insert_source(
             calloop::generic::Generic::new(poll_fd, calloop::Interest::READ, calloop::Mode::Level),
@@ -168,7 +168,6 @@ impl HeyDM {
         )?;
 
         if use_winit {
-            // Restore original display for winit to connect to parent compositor
             if let Some(display_env) = original_wayland_display {
                 std::env::set_var("WAYLAND_DISPLAY", display_env);
             }
@@ -191,10 +190,8 @@ impl HeyDM {
         info!("Initializing winit backend with Glow (OpenGL) renderer");
         let (mut backend, mut winit_evt) = winit::init::<GlowRenderer>()?;
         
-        // Set the variable for any future children we spawn (alacritty, etc.)
         std::env::set_var("WAYLAND_DISPLAY", socket_name);
         
-        // winit 0.30: window_size() returns Size<i32, Physical> directly
         let output_size = backend.window_size();
         state.output_size = output_size;
 
@@ -216,7 +213,7 @@ impl HeyDM {
 
         output.change_current_state(
             Some(mode),
-            Some(Transform::Flipped180),
+            Some(Transform::Normal),
             None,
             Some((0, 0).into()),
         );
@@ -229,7 +226,16 @@ impl HeyDM {
         );
 
         let mut running = true;
+        let mut last_frame = std::time::Instant::now();
+
         while running {
+            let now = std::time::Instant::now();
+            let dt = now.duration_since(last_frame);
+            last_frame = now;
+
+            // Update animations
+            state.window_manager.update_animations(dt);
+
             winit_evt.dispatch_new_events(|event| match event {
                 WinitEvent::Resized { size, .. } => {
                     state.output_size = size;
@@ -258,10 +264,27 @@ impl HeyDM {
             // Winit backend render path
             {
                 let (renderer, mut target) = backend.bind()?;
+                
+                // 1. Gather Wayland elements
+                let render_elements = crate::render::Renderer::gather_elements(state, renderer);
+
+                // 2. Generate 1:1 UI Design via tiny-skia
+                let ui_pixmap = crate::render::Renderer::draw_ui(state);
+                
+                // 3. Import UI Pixmap as Texture
+                let ui_texture = renderer.import_memory(
+                    ui_pixmap.data(),
+                    Fourcc::Abgr8888,
+                    (state.output_size.w, state.output_size.h).into(),
+                    false,
+                ).map_err(|e| format!("Import failed: {}", e))?;
+
+                // 4. Start rendering the frame
                 let mut frame = renderer
                     .render(&mut target, state.output_size, smithay::utils::Transform::Normal)?;
                 
-                crate::render::Renderer::render_frame(state, &mut frame, &output, state.output_size)?;
+                // 5. Render everything
+                crate::render::Renderer::render_frame(state, renderer, &mut frame, &render_elements, &ui_texture, state.output_size)?;
                 
                 let _ = frame.finish()?;
             }

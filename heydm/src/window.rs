@@ -73,13 +73,14 @@ impl WindowElement {
         self.size = size;
     }
 
-    /// Check if a point is inside this window
+    /// Check if a point is inside this window (using current animated geometry)
     pub fn contains_point(&self, point: (f64, f64)) -> bool {
-        let rect = self.geometry();
-        point.0 >= rect.loc.x as f64
-            && point.0 <= (rect.loc.x + rect.size.w) as f64
-            && point.1 >= rect.loc.y as f64
-            && point.1 <= (rect.loc.y + rect.size.h) as f64
+        let x = self.current_position.x;
+        let y = self.current_position.y;
+        let w = self.current_size.w;
+        let h = self.current_size.h;
+        
+        point.0 >= x && point.0 <= x + w && point.1 >= y && point.1 <= y + h
     }
 
     /// Get the WlSurface associated with this window (clones the Arc-backed handle)
@@ -320,8 +321,8 @@ impl WindowManager {
             if window.contains_point(pos) {
                 if let Some(surface) = window.wl_surface() {
                     let relative_pos = (
-                        pos.0 - window.position.x as f64,
-                        pos.1 - window.position.y as f64,
+                        pos.0 - window.current_position.x,
+                        pos.1 - window.current_position.y,
                     );
                     return Some((surface, relative_pos));
                 }

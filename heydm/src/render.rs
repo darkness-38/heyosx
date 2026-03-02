@@ -30,15 +30,17 @@ impl Renderer {
     {
         let mut render_elements = Vec::new();
         for window in state.window_manager.windows().iter() {
-            let geom = window.geometry();
             if let Some(surface) = window.wl_surface() {
-                let location = Point::from((geom.loc.x, geom.loc.y));
+                let location = Point::from((
+                    window.current_position.x as i32,
+                    window.current_position.y as i32,
+                ));
                 let elements = render_elements_from_surface_tree(
                     renderer,
                     &surface,
                     location,
-                    Scale::from(1.0),
-                    1.0,
+                    Scale::from(window.scale as f64),
+                    window.opacity as f64,
                     Kind::Unspecified,
                 );
                 render_elements.extend(elements);
@@ -70,44 +72,49 @@ impl Renderer {
         // Window Decorations (Shadows and Borders)
         let focused_idx = state.window_manager.windows().len().checked_sub(1);
         for (idx, window) in state.window_manager.windows().iter().enumerate() {
-            let geom = window.geometry();
             let is_focused = Some(idx) == focused_idx;
             
-            let x = geom.loc.x as f32;
-            let y = geom.loc.y as f32;
-            let w = geom.size.w as f32;
-            let h = geom.size.h as f32;
-            let radius = 12.0;
+            let x = window.current_position.x as f32;
+            let y = window.current_position.y as f32;
+            let w = window.current_size.w as f32;
+            let h = window.current_size.h as f32;
+            let radius = 12.0 * window.scale; // Scale radius with the window
 
             // 1. Draw Shadow (Simple rounded rect with transparency)
-            let shadow_offset = 6.0;
-            let shadow_blur = 12.0;
-            paint.set_color_rgba8(0, 0, 0, 100);
-            let shadow_rect = Rect::from_xywh(
+            let shadow_offset = 6.0 * window.scale;
+            let shadow_blur = 12.0 * window.scale;
+            let shadow_opacity = (100.0 * window.opacity) as u8;
+            paint.set_color_rgba8(0, 0, 0, shadow_opacity);
+            
+            if let Some(shadow_rect) = Rect::from_xywh(
                 x - shadow_blur/2.0 + shadow_offset, 
                 y - shadow_blur/2.0 + shadow_offset, 
                 w + shadow_blur, 
                 h + shadow_blur
-            ).unwrap();
-            let mut shadow_pb = PathBuilder::new();
-            Self::draw_rounded_rect(&mut shadow_pb, shadow_rect, radius + 4.0);
-            if let Some(path) = shadow_pb.finish() {
-                pixmap.fill_path(&path, &paint, FillRule::Winding, SkiaTransform::identity(), None);
+            ) {
+                let mut shadow_pb = PathBuilder::new();
+                Self::draw_rounded_rect(&mut shadow_pb, shadow_rect, radius + 4.0);
+                if let Some(path) = shadow_pb.finish() {
+                    pixmap.fill_path(&path, &paint, FillRule::Winding, SkiaTransform::identity(), None);
+                }
             }
 
             // 2. Draw Rounded Border
             let b = 2.0;
+            let border_opacity = (255.0 * window.opacity) as u8;
             let border_color = if is_focused { 
-                Color::from_rgba8(216, 180, 204, 255) // heyOS Pink
+                Color::from_rgba8(216, 180, 204, border_opacity) // heyOS Pink
             } else { 
-                Color::from_rgba8(38, 35, 45, 255)    // Deep Gray
+                Color::from_rgba8(38, 35, 45, border_opacity)    // Deep Gray
             };
             paint.set_color(border_color);
-            let border_rect = Rect::from_xywh(x - b, y - b, w + 2.0 * b, h + 2.0 * b).unwrap();
-            let mut border_pb = PathBuilder::new();
-            Self::draw_rounded_rect(&mut border_pb, border_rect, radius + b);
-            if let Some(path) = border_pb.finish() {
-                pixmap.fill_path(&path, &paint, FillRule::Winding, SkiaTransform::identity(), None);
+            
+            if let Some(border_rect) = Rect::from_xywh(x - b, y - b, w + 2.0 * b, h + 2.0 * b) {
+                let mut border_pb = PathBuilder::new();
+                Self::draw_rounded_rect(&mut border_pb, border_rect, radius + b);
+                if let Some(path) = border_pb.finish() {
+                    pixmap.fill_path(&path, &paint, FillRule::Winding, SkiaTransform::identity(), None);
+                }
             }
         }
 
