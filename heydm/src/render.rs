@@ -6,7 +6,7 @@
 // =============================================================================
 
 use smithay::backend::renderer::{Frame, Renderer as SmithayRenderer, ImportAll, ImportMemWl, ImportDmaWl};
-use smithay::utils::{Physical, Rectangle, Size, Point, Scale};
+use smithay::utils::{Physical, Rectangle, Size, Point, Scale, Buffer};
 use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
 };
@@ -29,10 +29,21 @@ impl Renderer {
         R::TextureId: Clone + 'static,
     {
         let mut render_elements = Vec::new();
+        let output_w = state.output_size.w as f64;
+
         for window in state.window_manager.windows().iter() {
+            let ws_offset_x = (window.workspace as f64 - state.window_manager.current_workspace_offset) * output_w;
+            let x = window.current_position.x + ws_offset_x;
+            let w = window.current_size.w;
+
+            // Skip if completely off-screen
+            if x + w < 0.0 || x > output_w {
+                continue;
+            }
+
             if let Some(surface) = window.wl_surface() {
                 let location = Point::from((
-                    window.current_position.x as i32,
+                    x as i32,
                     window.current_position.y as i32,
                 ));
                 let elements = render_elements_from_surface_tree(
@@ -40,7 +51,7 @@ impl Renderer {
                     &surface,
                     location,
                     Scale::from(window.scale as f64),
-                    window.opacity as f64,
+                    window.opacity as f32,
                     Kind::Unspecified,
                 );
                 render_elements.extend(elements);
@@ -70,14 +81,29 @@ impl Renderer {
         }
 
         // Window Decorations (Shadows and Borders)
-        let focused_idx = state.window_manager.windows().len().checked_sub(1);
-        for (idx, window) in state.window_manager.windows().iter().enumerate() {
-            let is_focused = Some(idx) == focused_idx;
+        let output_w = output_size.w as f64;
+        let ws_offset_base = state.window_manager.current_workspace_offset;
+        let focused_ptr = state.window_manager.focused_window().map(|w| w as *const _);
+
+        for window in state.window_manager.windows().iter() {
+            let ws_offset_x = (window.workspace as f64 - ws_offset_base) * output_w;
             
-            let x = window.current_position.x as f32;
-            let y = window.current_position.y as f32;
-            let w = window.current_size.w as f32;
-            let h = window.current_size.h as f32;
+            let x = window.current_position.x + ws_offset_x;
+            let y = window.current_position.y;
+            let w = window.current_size.w;
+            let h = window.current_size.h;
+
+            // Skip if completely off-screen
+            if x + w < 0.0 || x > output_w {
+                continue;
+            }
+
+            let is_focused = focused_ptr.map_or(false, |ptr| std::ptr::eq(ptr, *window as *const _));
+            
+            let x_f = x as f32;
+            let y_f = y as f32;
+            let w_f = w as f32;
+            let h_f = h as f32;
             let radius = 12.0 * window.scale; // Scale radius with the window
 
             // 1. Draw Shadow (Simple rounded rect with transparency)
@@ -87,10 +113,10 @@ impl Renderer {
             paint.set_color_rgba8(0, 0, 0, shadow_opacity);
             
             if let Some(shadow_rect) = Rect::from_xywh(
-                x - shadow_blur/2.0 + shadow_offset, 
-                y - shadow_blur/2.0 + shadow_offset, 
-                w + shadow_blur, 
-                h + shadow_blur
+                x_f - shadow_blur/2.0 + shadow_offset, 
+                y_f - shadow_blur/2.0 + shadow_offset, 
+                w_f + shadow_blur, 
+                h_f + shadow_blur
             ) {
                 let mut shadow_pb = PathBuilder::new();
                 Self::draw_rounded_rect(&mut shadow_pb, shadow_rect, radius + 4.0);
@@ -109,7 +135,7 @@ impl Renderer {
             };
             paint.set_color(border_color);
             
-            if let Some(border_rect) = Rect::from_xywh(x - b, y - b, w + 2.0 * b, h + 2.0 * b) {
+            if let Some(border_rect) = Rect::from_xywh(x_f - b, y_f - b, w_f + 2.0 * b, h_f + 2.0 * b) {
                 let mut border_pb = PathBuilder::new();
                 Self::draw_rounded_rect(&mut border_pb, border_rect, radius + b);
                 if let Some(path) = border_pb.finish() {
@@ -173,28 +199,31 @@ impl Renderer {
         pb.close();
     }
 
-    pub fn render_frame<R, F>(
+    pub fn render_frame<R>(
         state: &HeyDM,
-        renderer: &mut R,
-        frame: &mut F,
+        frame: &mut R::Frame<'_, '_>,
         render_elements: &[WaylandSurfaceRenderElement<R>],
         ui_texture: &R::TextureId,
         output_size: Size<i32, Physical>,
     ) -> Result<(), Box<dyn std::error::Error>> 
     where 
         R: SmithayRenderer + ImportAll + ImportMemWl + ImportDmaWl + 'static,
-        F: Frame<Error = R::Error, TextureId = R::TextureId>,
         R::TextureId: Clone + 'static,
     {
         // 1. Draw UI Texture
-        frame.clear([0.0, 0.0, 0.0, 1.0], &[Rectangle::new((0, 0).into(), output_size)])?;
+        frame.clear([0.0, 0.0, 0.0, 1.0].into(), &[Rectangle::new((0, 0).into(), output_size)])?;
         
-        Frame::draw_texture(
-            frame,
+        let ui_rect = Rectangle::new((0, 0).into(), output_size);
+        frame.render_texture_from_to(
             ui_texture,
-            Rectangle::new((0, 0).into(), output_size),
-            Rectangle::new((0, 0).into(), output_size),
+            Rectangle::from_loc_and_size(
+                (ui_rect.loc.x as f64, ui_rect.loc.y as f64),
+                (ui_rect.size.w as f64, ui_rect.size.h as f64),
+            ),
+            ui_rect,
             &[],
+            &[],
+            smithay::utils::Transform::Normal,
             1.0,
         )?;
 
@@ -204,7 +233,7 @@ impl Renderer {
         // Draw Wayland surface elements
         if !render_elements.is_empty() {
             let damage = vec![Rectangle::new((0, 0).into(), output_size)];
-            let _ = draw_render_elements(renderer, frame, render_elements, &damage);
+            let _ = draw_render_elements(frame, 1.0, render_elements, &damage);
         }
 
         // 3. Cursor
