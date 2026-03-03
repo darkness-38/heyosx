@@ -157,17 +157,82 @@ impl WindowManager {
         }
     }
 
+    /// Recompute window layout based on current mode
+    pub fn recompute_layout(&mut self, output_size: &Size<i32, Physical>) {
+        if self.layout == Layout::Floating {
+            // Floating layout - windows maintain their own geometry
+            return;
+        }
+
+        // Get list of windows that should be tiled (exclude fullscreen)
+        let tiled_windows: Vec<usize> = self.windows
+            .iter()
+            .enumerate()
+            .filter(|(_, w)| !w.fullscreen)
+            .map(|(i, _)| i)
+            .collect();
+
+        if tiled_windows.is_empty() {
+            return;
+        }
+
+        let n = tiled_windows.len();
+        let gap = self.gaps;
+        
+        // Useable area (subtract panel and apply outer gaps)
+        let area_x = gap;
+        let area_y = self.panel_height + gap;
+        let area_w = (output_size.w - 2 * gap).max(0);
+        let area_h = (output_size.h - self.panel_height - 2 * gap).max(0);
+
+        if n <= self.master_count {
+            // All windows in master area (full width)
+            let total_gaps = (n as i32 - 1) * gap;
+            let win_h = (area_h - total_gaps).max(0) / n as i32;
+            
+            for (i, &win_idx) in tiled_windows.iter().enumerate() {
+                let y = area_y + i as i32 * (win_h + gap);
+                self.windows[win_idx].set_position(Point::from((area_x, y)));
+                self.windows[win_idx].set_size(Size::from((area_w, win_h)));
+            }
+        } else {
+            // Split into Master and Stack
+            let master_w = ((area_w - gap) as f32 * self.master_ratio) as i32;
+            let stack_w = (area_w - gap - master_w).max(0);
+            let stack_x = area_x + master_w + gap;
+
+            // Master area
+            let m = self.master_count;
+            let total_m_gaps = (m as i32 - 1) * gap;
+            let m_win_h = (area_h - total_m_gaps).max(0) / m as i32;
+            
+            for (i, &win_idx) in tiled_windows.iter().take(m).enumerate() {
+                let y = area_y + i as i32 * (m_win_h + gap);
+                self.windows[win_idx].set_position(Point::from((area_x, y)));
+                self.windows[win_idx].set_size(Size::from((master_w, m_win_h)));
+            }
+
+            // Stack area
+            let s = n - m;
+            let total_s_gaps = (s as i32 - 1) * gap;
+            let s_win_h = (area_h - total_s_gaps).max(0) / s as i32;
+            
+            for (i, &win_idx) in tiled_windows.iter().skip(m).enumerate() {
+                let y = area_y + i as i32 * (s_win_h + gap);
+                self.windows[win_idx].set_position(Point::from((stack_x, y)));
+                self.windows[win_idx].set_size(Size::from((stack_w, s_win_h)));
+            }
+        }
+
+        debug!("Tiling layout recomputed for {} windows", n);
+    }
+
     /// Add a new window to the manager
     pub fn add_window(
         &mut self,
-        mut window: WindowElement,
+        window: WindowElement,
         output_size: &Size<i32, Physical>,
     ) {
-        // Center the window on screen, below the panel
-        let x = (output_size.w - window.size.w) / 2;
-        let y = self.panel_height + (output_size.h - self.panel_height - window.size.h) / 2;
-        window.set_position(Point::from((x.max(0), y.max(self.panel_height))));
-
         self.windows.push(window);
         self.focused = Some(self.windows.len() - 1);
 
@@ -176,10 +241,12 @@ impl WindowManager {
             self.windows.len(),
             self.focused
         );
+
+        self.recompute_layout(output_size);
     }
 
     /// Remove a window by its toplevel surface
-    pub fn remove_window(&mut self, surface: &ToplevelSurface) {
+    pub fn remove_window(&mut self, surface: &ToplevelSurface, output_size: &Size<i32, Physical>) {
         if let Some(idx) = self
             .windows
             .iter()
@@ -203,6 +270,8 @@ impl WindowManager {
                 self.windows.len(),
                 self.focused
             );
+
+            self.recompute_layout(output_size);
         }
     }
 
@@ -253,8 +322,45 @@ impl WindowManager {
                     window.fullscreen = true;
                     info!("Window entered fullscreen");
                 }
+                
+                self.recompute_layout(output_size);
             }
         }
+    }
+
+    /// Increase the number of windows in the master area
+    pub fn inc_master_count(&mut self, output_size: &Size<i32, Physical>) {
+        self.master_count += 1;
+        self.recompute_layout(output_size);
+    }
+
+    /// Decrease the number of windows in the master area
+    pub fn dec_master_count(&mut self, output_size: &Size<i32, Physical>) {
+        if self.master_count > 1 {
+            self.master_count -= 1;
+            self.recompute_layout(output_size);
+        }
+    }
+
+    /// Increase the master area ratio
+    pub fn inc_master_ratio(&mut self, output_size: &Size<i32, Physical>) {
+        self.master_ratio = (self.master_ratio + 0.05).min(0.95);
+        self.recompute_layout(output_size);
+    }
+
+    /// Decrease the master area ratio
+    pub fn dec_master_ratio(&mut self, output_size: &Size<i32, Physical>) {
+        self.master_ratio = (self.master_ratio - 0.05).max(0.05);
+        self.recompute_layout(output_size);
+    }
+
+    /// Toggle between floating and tiling layouts
+    pub fn toggle_layout(&mut self, output_size: &Size<i32, Physical>) {
+        self.layout = match self.layout {
+            Layout::Floating => Layout::Tiling,
+            Layout::Tiling => Layout::Floating,
+        };
+        self.recompute_layout(output_size);
     }
 
     /// Tile the focused window to the left half of the screen
