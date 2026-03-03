@@ -1,34 +1,34 @@
 # Project Roadmap
 
-## Phase 1: Branding Consistency Update
+## Phase 1: Branding Consistency Update (Completed)
 - **Goal:** Unify the "heyOS" branding across bootloader, greeter, and desktop session.
-- **Tasks:**
-  - Update greeter UI (`heygreeter/ui/greeter.slint`) to explicitly state "heyOS" and "heyOS Team".
-  - Verify and update `airootfs` (like `/etc/issue`, `/etc/os-release`) to have the correct branding strings.
-  - Test the build to confirm visual consistency.
-- **Success Criteria:** System clearly displays the correct branding everywhere.
 
-## Phase 2: heydm Foundation for Advanced UI
+## Phase 2: heydm Foundation for Advanced UI (Completed)
 - **Goal:** Upgrade the compositor (`heydm`) rendering pipeline to support advanced visual effects (blur, rounded corners).
-- **Tasks:**
-  - Investigate Smithay `glow` backend capabilities for shader-based blur and rounded corners.
-  - Implement basic rounded corners for XDG and layer shell windows.
-  - Add drop shadows to active windows.
-- **Success Criteria:** Windows have rounded corners and shadows without significant performance drop.
 
-## Phase 3: Fluid Animations
+## Phase 3: Fluid Animations (Completed)
 - **Goal:** Introduce smooth, high-refresh-rate window transitions similar to end-4 hyprland.
-- **Tasks:**
-  - Implement an animation system/loop inside `heydm` for tracking window states.
-  - Add fade and scale-in animations for new windows.
-  - Add fade and scale-out animations for closing windows.
-  - Implement workspace transition animations.
-- **Success Criteria:** Window operations feel fluid and responsive at 60+ FPS.
 
-## Phase 4: Greeter Polish and Packaging
+## Phase 4: Greeter Polish and Packaging (Completed)
 - **Goal:** Enhance `heygreeter` visuals and ensure everything is correctly packaged into the ISO.
+
+## Phase 5: Fix Build and Smithay Alignment (Completed)
+- **Goal:** Address all compilation errors and align `heydm` with the latest Smithay version.
+
+## Phase 6: Advanced Tiling Layouts
+- **Goal:** Implement dynamic master/stack tiling logic with configurable gaps.
+- **Plans:** 3 plans
+- **Requirements:** FEAT-TILING-01, FEAT-TILING-02, FEAT-TILING-03
 - **Tasks:**
-  - Add hardware-accelerated entry transitions to `heygreeter`.
-  - Update `packages.x86_64` and `build.sh` if new UI dependencies were added.
-  - Generate the final ISO and perform end-to-end testing.
-- **Success Criteria:** System builds fully and the live ISO boots directly into the fully customized environment.
+  - [ ] 06-01-PLAN.md — Refactor WindowManager and add layout state infrastructure.
+  - [ ] 06-02-PLAN.md — Implement Master/Stack logic and gap geometry.
+  - [ ] 06-03-PLAN.md — Add input bindings and tiling controls.
+- **Success Criteria:** Windows automatically tile according to the master/stack strategy with gaps.
+
+## Phase 7: Animation and Interaction Polish
+- **Goal:** Refine existing animations and ensure input handling is flawless during transitions.
+- **Tasks:**
+  - Implement workspace switching animations.
+  - Fix hit-testing for windows currently in motion (animated state).
+  - Add focus animation for window transitions.
+- **Success Criteria:** System interaction feels "premium" and animations are perfectly smooth at high frame rates.
