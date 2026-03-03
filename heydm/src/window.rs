@@ -109,6 +109,12 @@ pub struct WindowManager {
     pub current_workspace: usize,
     /// Current animated workspace offset (for sliding transitions)
     pub current_workspace_offset: f64,
+    /// Current animated focus position
+    pub current_focus_pos: Point<f64, Logical>,
+    /// Current animated focus size
+    pub current_focus_size: Size<f64, Logical>,
+    /// Current focus indicator opacity
+    pub focus_opacity: f32,
     /// Current cursor position
     cursor_pos: (f64, f64),
     /// Active grab state (for moving/resizing)
@@ -156,6 +162,9 @@ impl WindowManager {
             focused: None,
             current_workspace: 0,
             current_workspace_offset: 0.0,
+            current_focus_pos: Point::from((0.0, 0.0)),
+            current_focus_size: Size::from((0.0, 0.0)),
+            focus_opacity: 0.0,
             cursor_pos: (0.0, 0.0),
             grab: None,
             panel_height: 40,
@@ -592,9 +601,29 @@ impl WindowManager {
         let dt_secs = dt.as_secs_f64();
         // Easing factor (lower is smoother, higher is faster)
         let factor = 12.0;
+        let focus_factor = 10.0; // Slightly slower for "magnetic" feel
 
         // Interpolate workspace offset
         self.current_workspace_offset += (self.current_workspace as f64 - self.current_workspace_offset) * factor * dt_secs;
+
+        // Update focus indicator
+        if let Some(idx) = self.focused {
+            let window = &self.windows[idx];
+            let target_pos = window.position;
+            let target_size = window.size;
+
+            // Interpolate focus box geometry towards target window geometry
+            self.current_focus_pos.x += (target_pos.x as f64 - self.current_focus_pos.x) * focus_factor * dt_secs;
+            self.current_focus_pos.y += (target_pos.y as f64 - self.current_focus_pos.y) * focus_factor * dt_secs;
+            self.current_focus_size.w += (target_size.w as f64 - self.current_focus_size.w) * focus_factor * dt_secs;
+            self.current_focus_size.h += (target_size.h as f64 - self.current_focus_size.h) * focus_factor * dt_secs;
+
+            // Fade in
+            self.focus_opacity += (1.0 - self.focus_opacity) * focus_factor as f32 * dt_secs as f32;
+        } else {
+            // Fade out
+            self.focus_opacity += (0.0 - self.focus_opacity) * focus_factor as f32 * dt_secs as f32;
+        }
 
         for window in &mut self.windows {
             // Update position
