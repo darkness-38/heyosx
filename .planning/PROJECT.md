@@ -12,3 +12,7 @@ The desktop manager (`heydm`) must feature highly detailed and animated UI/UX el
 - **Smithay**: Wayland compositor framework
 - **Slint**: UI definition
 - **Arch Linux**: Base OS distribution
+
+## Milestone: Fixing heydm (Current)
+- **Goal:** Resolve the "black screen" state and implement a fully-featured, high-fidelity desktop UI.
+- **Key Focus:** Real-time background rendering, integrated status bar, polished window decorations, and a "magnetic" focus system inspired by the end-4 hyprland aesthetic.
