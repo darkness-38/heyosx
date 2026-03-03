@@ -33,6 +33,8 @@ pub struct WindowElement {
     fullscreen: bool,
     /// Saved geometry before fullscreen (for restore)
     saved_geometry: Option<Rectangle<i32, Logical>>,
+    /// Workspace index (0-8)
+    pub workspace: usize,
 }
 
 impl WindowElement {
@@ -50,6 +52,7 @@ impl WindowElement {
             scale: 0.9,   // Start slightly smaller for scale-in
             fullscreen: false,
             saved_geometry: None,
+            workspace: 0,
         }
     }
 
@@ -102,6 +105,10 @@ pub struct WindowManager {
     windows: Vec<WindowElement>,
     /// Index of the currently focused window (None if no windows)
     focused: Option<usize>,
+    /// Current workspace (0-8)
+    pub current_workspace: usize,
+    /// Current animated workspace offset (for sliding transitions)
+    pub current_workspace_offset: f64,
     /// Current cursor position
     cursor_pos: (f64, f64),
     /// Active grab state (for moving/resizing)
@@ -147,6 +154,8 @@ impl WindowManager {
         Self {
             windows: Vec::new(),
             focused: None,
+            current_workspace: 0,
+            current_workspace_offset: 0.0,
             cursor_pos: (0.0, 0.0),
             grab: None,
             panel_height: 40,
@@ -164,11 +173,11 @@ impl WindowManager {
             return;
         }
 
-        // Get list of windows that should be tiled (exclude fullscreen)
+        // Get list of windows that should be tiled (exclude fullscreen and only on current workspace)
         let tiled_windows: Vec<usize> = self.windows
             .iter()
             .enumerate()
-            .filter(|(_, w)| !w.fullscreen)
+            .filter(|(_, w)| !w.fullscreen && w.workspace == self.current_workspace)
             .map(|(i, _)| i)
             .collect();
 
@@ -178,67 +187,146 @@ impl WindowManager {
 
         let n = tiled_windows.len();
         
-        // Useable area (subtract panel)
-        let area_x = 0;
-        let area_y = self.panel_height;
-        let area_w = output_size.w;
-        let area_h = (output_size.h - self.panel_height).max(0);
+        // Useable area (subtract panel and apply outer gaps)
+        let area_x = self.gaps;
+        let area_y = self.panel_height + self.gaps;
+        let area_w = output_size.w - 2 * self.gaps;
+        let area_h = (output_size.h - self.panel_height - 2 * self.gaps).max(0);
 
         if n <= self.master_count {
             // All windows in master area (full width)
-            let win_h = area_h / n as i32;
+            let total_gaps = self.gaps * (n as i32 - 1);
+            let win_h = (area_h - total_gaps) / n as i32;
             
             for (i, &win_idx) in tiled_windows.iter().enumerate() {
-                let y = area_y + i as i32 * win_h;
+                let y = area_y + i as i32 * (win_h + self.gaps);
                 self.windows[win_idx].set_position(Point::from((area_x, y)));
                 self.windows[win_idx].set_size(Size::from((area_w, win_h)));
             }
         } else {
             // Split into Master and Stack
-            let master_w = (area_w as f32 * self.master_ratio) as i32;
-            let stack_w = area_w - master_w;
-            let stack_x = area_x + master_w;
+            let m = self.master_count;
+            let s = n - m;
+
+            let master_area_w = ((area_w - self.gaps) as f32 * self.master_ratio) as i32;
+            let stack_area_w = area_w - master_area_w - self.gaps;
+            let stack_x = area_x + master_area_w + self.gaps;
 
             // Master area
-            let m = self.master_count;
-            let m_win_h = area_h / m as i32;
+            let m_total_gaps = self.gaps * (m as i32 - 1);
+            let m_win_h = (area_h - m_total_gaps) / m as i32;
             
             for (i, &win_idx) in tiled_windows.iter().take(m).enumerate() {
-                let y = area_y + i as i32 * m_win_h;
+                let y = area_y + i as i32 * (m_win_h + self.gaps);
                 self.windows[win_idx].set_position(Point::from((area_x, y)));
-                self.windows[win_idx].set_size(Size::from((master_w, m_win_h)));
+                self.windows[win_idx].set_size(Size::from((master_area_w, m_win_h)));
             }
 
             // Stack area
-            let s = n - m;
-            let s_win_h = area_h / s as i32;
+            let s_total_gaps = self.gaps * (s as i32 - 1);
+            let s_win_h = (area_h - s_total_gaps) / s as i32;
             
             for (i, &win_idx) in tiled_windows.iter().skip(m).enumerate() {
-                let y = area_y + i as i32 * s_win_h;
+                let y = area_y + i as i32 * (s_win_h + self.gaps);
                 self.windows[win_idx].set_position(Point::from((stack_x, y)));
-                self.windows[win_idx].set_size(Size::from((stack_w, s_win_h)));
+                self.windows[win_idx].set_size(Size::from((stack_area_w, s_win_h)));
             }
         }
 
         debug!("Tiling layout recomputed for {} windows", n);
     }
 
+    pub fn inc_master_count(&mut self, output_size: &Size<i32, Physical>) {
+        self.master_count += 1;
+        info!("Master count incremented to {}", self.master_count);
+        self.recompute_layout(output_size);
+    }
+
+    pub fn dec_master_count(&mut self, output_size: &Size<i32, Physical>) {
+        if self.master_count > 1 {
+            self.master_count -= 1;
+            info!("Master count decremented to {}", self.master_count);
+            self.recompute_layout(output_size);
+        }
+    }
+
+    pub fn inc_master_ratio(&mut self, output_size: &Size<i32, Physical>) {
+        self.master_ratio = (self.master_ratio + 0.05).min(0.9);
+        info!("Master ratio incremented to {:.2}", self.master_ratio);
+        self.recompute_layout(output_size);
+    }
+
+    pub fn dec_master_ratio(&mut self, output_size: &Size<i32, Physical>) {
+        self.master_ratio = (self.master_ratio - 0.05).max(0.1);
+        info!("Master ratio decremented to {:.2}", self.master_ratio);
+        self.recompute_layout(output_size);
+    }
+
+    pub fn toggle_layout(&mut self, output_size: &Size<i32, Physical>) {
+        self.layout = match self.layout {
+            Layout::Floating => Layout::Tiling,
+            Layout::Tiling => Layout::Floating,
+        };
+        info!("Layout toggled to {:?}", self.layout);
+        self.recompute_layout(output_size);
+    }
+
     /// Add a new window to the manager
     pub fn add_window(
         &mut self,
-        window: WindowElement,
+        mut window: WindowElement,
         output_size: &Size<i32, Physical>,
     ) {
+        window.workspace = self.current_workspace;
         self.windows.push(window);
         self.focused = Some(self.windows.len() - 1);
 
         info!(
-            "Window added (total: {}), focused: {:?}",
+            "Window added to workspace {} (total: {}), focused: {:?}",
+            self.current_workspace,
             self.windows.len(),
             self.focused
         );
 
         self.recompute_layout(output_size);
+    }
+
+    /// Switch to a different workspace
+    pub fn switch_workspace(&mut self, new_workspace: usize, output_size: &Size<i32, Physical>) {
+        if new_workspace == self.current_workspace {
+            return;
+        }
+
+        info!("Switching to workspace {}", new_workspace);
+        self.current_workspace = new_workspace;
+
+        // Update focus to the topmost window on the new workspace
+        self.focused = self.windows
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, w)| w.workspace == self.current_workspace)
+            .map(|(idx, _)| idx);
+
+        self.recompute_layout(output_size);
+    }
+
+    /// Move the focused window to another workspace
+    pub fn move_focused_to_workspace(&mut self, target_workspace: usize, output_size: &Size<i32, Physical>) {
+        if let Some(idx) = self.focused {
+            info!("Moving focused window to workspace {}", target_workspace);
+            self.windows[idx].workspace = target_workspace;
+
+            // Focus the next available window on the current workspace
+            self.focused = self.windows
+                .iter()
+                .enumerate()
+                .rev()
+                .find(|(_, w)| w.workspace == self.current_workspace)
+                .map(|(idx, _)| idx);
+
+            self.recompute_layout(output_size);
+        }
     }
 
     /// Remove a window by its toplevel surface
@@ -255,7 +343,13 @@ impl WindowManager {
                 self.focused = None;
             } else if let Some(focused) = self.focused {
                 if focused >= self.windows.len() {
-                    self.focused = Some(self.windows.len() - 1);
+                    // Focus the topmost window on the current workspace
+                    self.focused = self.windows
+                        .iter()
+                        .enumerate()
+                        .rev()
+                        .find(|(_, w)| w.workspace == self.current_workspace)
+                        .map(|(idx, _)| idx);
                 } else if focused > idx {
                     self.focused = Some(focused - 1);
                 }
@@ -277,9 +371,14 @@ impl WindowManager {
         // In a full implementation, this would read the surface's committed size
     }
 
-    /// Get all windows in stack order
-    pub fn windows(&self) -> &[WindowElement] {
-        &self.windows
+    /// Get all windows visible on the current workspace (in stack order)
+    pub fn windows(&self) -> Vec<&WindowElement> {
+        // If we are animating between workspaces, return all windows so we can draw the ones sliding out/in
+        if (self.current_workspace_offset - self.current_workspace as f64).abs() > 0.001 {
+            self.windows.iter().collect()
+        } else {
+            self.windows.iter().filter(|w| w.workspace == self.current_workspace).collect()
+        }
     }
 
     /// Get the currently focused window
@@ -324,63 +423,37 @@ impl WindowManager {
         }
     }
 
-    /// Tile the focused window to the left half of the screen
-    pub fn tile_left(&mut self, output_size: &Size<i32, Physical>) {
-        if let Some(idx) = self.focused {
-            if idx < self.windows.len() {
-                let window = &mut self.windows[idx];
-                window.set_position(Point::from((0, self.panel_height)));
-                window.set_size(Size::from((
-                    output_size.w / 2,
-                    output_size.h - self.panel_height,
-                )));
-                window.fullscreen = false;
-                info!("Window tiled to left half");
-            }
-        }
-    }
-
-    /// Tile the focused window to the right half of the screen
-    pub fn tile_right(&mut self, output_size: &Size<i32, Physical>) {
-        if let Some(idx) = self.focused {
-            if idx < self.windows.len() {
-                let window = &mut self.windows[idx];
-                window.set_position(Point::from((
-                    output_size.w / 2,
-                    self.panel_height,
-                )));
-                window.set_size(Size::from((
-                    output_size.w / 2,
-                    output_size.h - self.panel_height,
-                )));
-                window.fullscreen = false;
-                info!("Window tiled to right half");
-            }
-        }
-    }
-
-    /// Cycle focus to the next window
+    /// Cycle focus to the next window on the current workspace
     pub fn cycle_focus(&mut self) {
-        if self.windows.len() <= 1 {
+        let visible_indices: Vec<usize> = self.windows
+            .iter()
+            .enumerate()
+            .filter(|(_, w)| w.workspace == self.current_workspace)
+            .map(|(i, _)| i)
+            .collect();
+
+        if visible_indices.len() <= 1 {
             return;
         }
 
-        self.focused = Some(match self.focused {
-            Some(idx) => (idx + 1) % self.windows.len(),
-            None => 0,
-        });
+        let current_visible_idx = visible_indices.iter().position(|&idx| Some(idx) == self.focused);
+        
+        let next_idx = match current_visible_idx {
+            Some(i) => visible_indices[(i + 1) % visible_indices.len()],
+            None => visible_indices[0],
+        };
+
+        self.focused = Some(next_idx);
 
         // Raise the focused window to the top of the stack
-        if let Some(idx) = self.focused {
-            let window = self.windows.remove(idx);
-            self.windows.push(window);
-            self.focused = Some(self.windows.len() - 1);
-        }
+        let window = self.windows.remove(next_idx);
+        self.windows.push(window);
+        self.focused = Some(self.windows.len() - 1);
 
         debug!("Focus cycled to window {:?}", self.focused);
     }
 
-    /// Focus the window at the given screen position
+    /// Focus the window at the given screen position (only on current workspace)
     pub fn focus_at(&mut self, pos: (f64, f64)) {
         // Search from top of stack (last) to bottom (first)
         let found = self
@@ -388,7 +461,7 @@ impl WindowManager {
             .iter()
             .enumerate()
             .rev()
-            .find(|(_, w)| w.contains_point(pos))
+            .find(|(_, w)| w.workspace == self.current_workspace && w.contains_point(pos))
             .map(|(idx, _)| idx);
 
         if let Some(idx) = found {
@@ -401,10 +474,10 @@ impl WindowManager {
         }
     }
 
-    /// Find the Wayland surface under the given screen position (returns owned WlSurface)
+    /// Find the Wayland surface under the given screen position (only on current workspace)
     pub fn surface_under(&self, pos: (f64, f64)) -> Option<(WlSurface, (f64, f64))> {
         for window in self.windows.iter().rev() {
-            if window.contains_point(pos) {
+            if window.workspace == self.current_workspace && window.contains_point(pos) {
                 if let Some(surface) = window.wl_surface() {
                     let relative_pos = (
                         pos.0 - window.current_position.x,
@@ -519,6 +592,9 @@ impl WindowManager {
         let dt_secs = dt.as_secs_f64();
         // Easing factor (lower is smoother, higher is faster)
         let factor = 12.0;
+
+        // Interpolate workspace offset
+        self.current_workspace_offset += (self.current_workspace as f64 - self.current_workspace_offset) * factor * dt_secs;
 
         for window in &mut self.windows {
             // Update position
