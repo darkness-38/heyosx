@@ -144,6 +144,47 @@ impl Renderer {
             }
         }
 
+        // 3. Draw Animated Focus Indicator
+        if state.window_manager.focus_opacity > 0.01 {
+            if let Some(focused) = state.window_manager.focused_window() {
+                let ws_offset_x = (focused.workspace as f64 - ws_offset_base) * output_w;
+                
+                let x = state.window_manager.current_focus_pos.x + ws_offset_x;
+                let y = state.window_manager.current_focus_pos.y;
+                let w = state.window_manager.current_focus_size.w;
+                let h = state.window_manager.current_focus_size.h;
+
+                let x_f = x as f32;
+                let y_f = y as f32;
+                let w_f = w as f32;
+                let h_f = h as f32;
+                let radius = 14.0; // Slightly larger radius for the focus box
+                let b = 3.0;       // Thicker border
+                
+                let opacity = (255.0 * state.window_manager.focus_opacity) as u8;
+                
+                // Outer Glow (Bloom-like)
+                paint.set_color_rgba8(189, 147, 249, opacity / 3); // #BD93F9 (Purple)
+                if let Some(glow_rect) = Rect::from_xywh(x_f - 6.0, y_f - 6.0, w_f + 12.0, h_f + 12.0) {
+                    let mut glow_pb = PathBuilder::new();
+                    Self::draw_rounded_rect(&mut glow_pb, glow_rect, radius + 4.0);
+                    if let Some(path) = glow_pb.finish() {
+                        pixmap.fill_path(&path, &paint, FillRule::Winding, SkiaTransform::identity(), None);
+                    }
+                }
+
+                // Vibrant Border
+                paint.set_color_rgba8(189, 147, 249, opacity);
+                if let Some(focus_rect) = Rect::from_xywh(x_f - b, y_f - b, w_f + 2.0 * b, h_f + 2.0 * b) {
+                    let mut focus_pb = PathBuilder::new();
+                    Self::draw_rounded_rect(&mut focus_pb, focus_rect, radius + b);
+                    if let Some(path) = focus_pb.finish() {
+                        pixmap.fill_path(&path, &paint, FillRule::Winding, SkiaTransform::identity(), None);
+                    }
+                }
+            }
+        }
+
         // Top Bar Pills
         paint.set_color_rgba8(25, 22, 30, 200);
         let pill_y = 10.0;
