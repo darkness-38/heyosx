@@ -89,6 +89,13 @@ impl WindowElement {
     }
 }
 
+/// Available window layouts
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Layout {
+    Floating,
+    Tiling,
+}
+
 /// The window manager tracks all windows and manages focus, layout, etc.
 pub struct WindowManager {
     /// All managed windows, in stack order (last = topmost)
@@ -101,6 +108,14 @@ pub struct WindowManager {
     grab: Option<GrabState>,
     /// Panel height (reserved space at top)
     panel_height: i32,
+    /// Current layout mode
+    pub layout: Layout,
+    /// Number of windows in the master area (for tiling)
+    pub master_count: usize,
+    /// Ratio of the screen taken by the master area (0.0 to 1.0)
+    pub master_ratio: f32,
+    /// Gap size between windows in pixels
+    pub gaps: i32,
 }
 
 /// State for an active pointer grab (move or resize)
@@ -135,6 +150,10 @@ impl WindowManager {
             cursor_pos: (0.0, 0.0),
             grab: None,
             panel_height: 40,
+            layout: Layout::Tiling,
+            master_count: 1,
+            master_ratio: 0.5,
+            gaps: 10,
         }
     }
 
