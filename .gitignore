@@ -22,12 +22,3 @@ build_log.txt
 
 # AI
 .gemini/
-.planning/
-.agents/
-
-photos/
-
-PROJECT.MD
-REQUIREMENTS.MD
-ROADMAP.MD
-STATE.MD
