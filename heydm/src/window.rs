@@ -177,48 +177,44 @@ impl WindowManager {
         }
 
         let n = tiled_windows.len();
-        let gap = self.gaps;
         
-        // Useable area (subtract panel and apply outer gaps)
-        let area_x = gap;
-        let area_y = self.panel_height + gap;
-        let area_w = (output_size.w - 2 * gap).max(0);
-        let area_h = (output_size.h - self.panel_height - 2 * gap).max(0);
+        // Useable area (subtract panel)
+        let area_x = 0;
+        let area_y = self.panel_height;
+        let area_w = output_size.w;
+        let area_h = (output_size.h - self.panel_height).max(0);
 
         if n <= self.master_count {
             // All windows in master area (full width)
-            let total_gaps = (n as i32 - 1) * gap;
-            let win_h = (area_h - total_gaps).max(0) / n as i32;
+            let win_h = area_h / n as i32;
             
             for (i, &win_idx) in tiled_windows.iter().enumerate() {
-                let y = area_y + i as i32 * (win_h + gap);
+                let y = area_y + i as i32 * win_h;
                 self.windows[win_idx].set_position(Point::from((area_x, y)));
                 self.windows[win_idx].set_size(Size::from((area_w, win_h)));
             }
         } else {
             // Split into Master and Stack
-            let master_w = ((area_w - gap) as f32 * self.master_ratio) as i32;
-            let stack_w = (area_w - gap - master_w).max(0);
-            let stack_x = area_x + master_w + gap;
+            let master_w = (area_w as f32 * self.master_ratio) as i32;
+            let stack_w = area_w - master_w;
+            let stack_x = area_x + master_w;
 
             // Master area
             let m = self.master_count;
-            let total_m_gaps = (m as i32 - 1) * gap;
-            let m_win_h = (area_h - total_m_gaps).max(0) / m as i32;
+            let m_win_h = area_h / m as i32;
             
             for (i, &win_idx) in tiled_windows.iter().take(m).enumerate() {
-                let y = area_y + i as i32 * (m_win_h + gap);
+                let y = area_y + i as i32 * m_win_h;
                 self.windows[win_idx].set_position(Point::from((area_x, y)));
                 self.windows[win_idx].set_size(Size::from((master_w, m_win_h)));
             }
 
             // Stack area
             let s = n - m;
-            let total_s_gaps = (s as i32 - 1) * gap;
-            let s_win_h = (area_h - total_s_gaps).max(0) / s as i32;
+            let s_win_h = area_h / s as i32;
             
             for (i, &win_idx) in tiled_windows.iter().skip(m).enumerate() {
-                let y = area_y + i as i32 * (s_win_h + gap);
+                let y = area_y + i as i32 * s_win_h;
                 self.windows[win_idx].set_position(Point::from((stack_x, y)));
                 self.windows[win_idx].set_size(Size::from((stack_w, s_win_h)));
             }
@@ -326,41 +322,6 @@ impl WindowManager {
                 self.recompute_layout(output_size);
             }
         }
-    }
-
-    /// Increase the number of windows in the master area
-    pub fn inc_master_count(&mut self, output_size: &Size<i32, Physical>) {
-        self.master_count += 1;
-        self.recompute_layout(output_size);
-    }
-
-    /// Decrease the number of windows in the master area
-    pub fn dec_master_count(&mut self, output_size: &Size<i32, Physical>) {
-        if self.master_count > 1 {
-            self.master_count -= 1;
-            self.recompute_layout(output_size);
-        }
-    }
-
-    /// Increase the master area ratio
-    pub fn inc_master_ratio(&mut self, output_size: &Size<i32, Physical>) {
-        self.master_ratio = (self.master_ratio + 0.05).min(0.95);
-        self.recompute_layout(output_size);
-    }
-
-    /// Decrease the master area ratio
-    pub fn dec_master_ratio(&mut self, output_size: &Size<i32, Physical>) {
-        self.master_ratio = (self.master_ratio - 0.05).max(0.05);
-        self.recompute_layout(output_size);
-    }
-
-    /// Toggle between floating and tiling layouts
-    pub fn toggle_layout(&mut self, output_size: &Size<i32, Physical>) {
-        self.layout = match self.layout {
-            Layout::Floating => Layout::Tiling,
-            Layout::Tiling => Layout::Floating,
-        };
-        self.recompute_layout(output_size);
     }
 
     /// Tile the focused window to the left half of the screen
