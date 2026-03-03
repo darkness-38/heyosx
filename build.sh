@@ -26,11 +26,13 @@ PARALLEL_JOBS=$(( TOTAL_JOBS / 2 ))
 CLEAN=false
 GREETER_ONLY=false
 HEYDM_ONLY=false
+VERBOSE=false
 for arg in "$@"; do
     case "$arg" in
         --clean) CLEAN=true ;;
         --greeter-only) GREETER_ONLY=true ;;
         --heydm-only) HEYDM_ONLY=true ;;
+        -v|--verbose) VERBOSE=true ;;
     esac
 done
 
@@ -80,7 +82,7 @@ cat << 'EOF'
     ██║  ██║███████╗   ██║   ╚██████╔╝███████║
     ╚═╝  ╚═╝╚══════╝   ╚═╝    ╚═════╝ ╚══════╝
 
-           ═══ ISO Build System ═══
+           ═══ Hybrid ISO Build System ═══
 EOF
 echo -e "${NC}"
 
@@ -174,7 +176,9 @@ build_rust() {
     mkdir -p "$build_dir"
 
     # Sync source using timestamps (-a) instead of checksums for speed
-    rsync -a --delete --exclude='target/' "$src_dir/" "$build_dir/"
+    local rsync_verbose=""
+    if $VERBOSE; then rsync_verbose="-v"; fi
+    rsync -a $rsync_verbose --delete --exclude='target/' "$src_dir/" "$build_dir/"
 
     cd "$build_dir"
     # Assign unique TMPDIR to prevent parallel build race conditions
@@ -188,8 +192,11 @@ build_rust() {
         jobs_flag="-j ${PARALLEL_JOBS}"
     fi
 
+    local verbose_flag=""
+    if $VERBOSE; then verbose_flag="--verbose"; fi
+
     # Use a subshell to capture output and prefix it for clarity if parallel
-    if ! cargo build --release ${jobs_flag} 2>&1 | sed "s/^/[${name}] /" | tee -a "$BUILD_LOG"; then
+    if ! cargo build --release ${jobs_flag} ${verbose_flag} 2>&1 | sed "s/^/[${name}] /" | tee -a "$BUILD_LOG"; then
         log_err "${name} build failed."
         return 1
     fi

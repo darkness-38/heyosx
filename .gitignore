@@ -20,10 +20,5 @@ build_log.txt
 # Temporary build files
 /tmp/
 
-# Temporary images
-*.png
-photos/
-/photos/
-
 # AI
 .gemini/

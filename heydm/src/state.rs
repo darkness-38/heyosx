@@ -233,8 +233,9 @@ impl HeyDM {
             let dt = now.duration_since(last_frame);
             last_frame = now;
 
-            // Update animations
+            // Update animations and panel state
             state.window_manager.update_animations(dt);
+            state.panel.update();
 
             winit_evt.dispatch_new_events(|event| match event {
                 WinitEvent::Resized { size, .. } => {
@@ -277,14 +278,20 @@ impl HeyDM {
                     Fourcc::Abgr8888,
                     (state.output_size.w, state.output_size.h).into(),
                     false,
-                ).map_err(|e| format!("Import failed: {}", e))?;
+                ).map_err(|e| {
+                    error!("UI Texture Import Failed: {}", e);
+                    format!("Import failed: {}", e)
+                })?;
+
+
+                tracing::debug!("UI texture imported: {}x{}", state.output_size.w, state.output_size.h);
 
                 // 4. Start rendering the frame
                 let mut frame = renderer
                     .render(&mut target, state.output_size, smithay::utils::Transform::Normal)?;
                 
                 // 5. Render everything
-                crate::render::Renderer::render_frame(state, renderer, &mut frame, &render_elements, &ui_texture, state.output_size)?;
+                crate::render::Renderer::render_frame(state, &mut frame, &render_elements, &ui_texture, state.output_size)?;
                 
                 let _ = frame.finish()?;
             }
@@ -343,8 +350,10 @@ impl XdgShellHandler for HeyDM {
         self.window_manager
             .add_window(WindowElement::new(surface), &self.output_size);
 
-        let window = self.window_manager.windows().last().unwrap();
-        window.toplevel().send_configure();
+        let windows = self.window_manager.windows();
+        if let Some(window) = windows.last() {
+            window.toplevel().send_configure();
+        }
     }
 
     fn new_popup(&mut self, _surface: PopupSurface, _positioner: PositionerState) {
@@ -353,7 +362,7 @@ impl XdgShellHandler for HeyDM {
 
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
         info!("Toplevel window destroyed");
-        self.window_manager.remove_window(&surface);
+        self.window_manager.remove_window(&surface, &self.output_size);
     }
 
     fn grab(&mut self, _surface: PopupSurface, _seat: WlSeat, _serial: smithay::utils::Serial) {}

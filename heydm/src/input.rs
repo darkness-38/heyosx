@@ -97,11 +97,37 @@ impl InputHandler {
                 K::d | K::D => Some(CompositorAction::ToggleLauncher),
                 K::q | K::Q => Some(CompositorAction::CloseWindow),
                 K::f | K::F => Some(CompositorAction::ToggleFullscreen),
-                K::Left => Some(CompositorAction::TileLeft),
-                K::Right => Some(CompositorAction::TileRight),
                 K::Tab => Some(CompositorAction::CycleFocus),
-                _ if modifiers.shift && (keysym == K::e || keysym == K::E) => {
-                    Some(CompositorAction::ExitCompositor)
+                K::space => Some(CompositorAction::ToggleLayout),
+                K::i | K::I => Some(CompositorAction::IncMasterCount),
+                K::o | K::O => Some(CompositorAction::DecMasterCount),
+                K::comma => Some(CompositorAction::DecMasterRatio),
+                K::period => Some(CompositorAction::IncMasterRatio),
+                
+                // Workspace switching: Super + 1-9
+                K::_1 => Some(CompositorAction::SwitchWorkspace(0)),
+                K::_2 => Some(CompositorAction::SwitchWorkspace(1)),
+                K::_3 => Some(CompositorAction::SwitchWorkspace(2)),
+                K::_4 => Some(CompositorAction::SwitchWorkspace(3)),
+                K::_5 => Some(CompositorAction::SwitchWorkspace(4)),
+                K::_6 => Some(CompositorAction::SwitchWorkspace(5)),
+                K::_7 => Some(CompositorAction::SwitchWorkspace(6)),
+                K::_8 => Some(CompositorAction::SwitchWorkspace(7)),
+                K::_9 => Some(CompositorAction::SwitchWorkspace(8)),
+
+                // Move window to workspace: Super + Shift + 1-9
+                _ if modifiers.shift => match keysym {
+                    K::_1 => Some(CompositorAction::MoveWindowToWorkspace(0)),
+                    K::_2 => Some(CompositorAction::MoveWindowToWorkspace(1)),
+                    K::_3 => Some(CompositorAction::MoveWindowToWorkspace(2)),
+                    K::_4 => Some(CompositorAction::MoveWindowToWorkspace(3)),
+                    K::_5 => Some(CompositorAction::MoveWindowToWorkspace(4)),
+                    K::_6 => Some(CompositorAction::MoveWindowToWorkspace(5)),
+                    K::_7 => Some(CompositorAction::MoveWindowToWorkspace(6)),
+                    K::_8 => Some(CompositorAction::MoveWindowToWorkspace(7)),
+                    K::_9 => Some(CompositorAction::MoveWindowToWorkspace(8)),
+                    K::e | K::E => Some(CompositorAction::ExitCompositor),
+                    _ => None,
                 }
                 _ => None,
             }
@@ -133,14 +159,6 @@ impl InputHandler {
                 info!("Action: Toggling fullscreen");
                 state.window_manager.toggle_fullscreen(&state.output_size);
             }
-            CompositorAction::TileLeft => {
-                info!("Action: Tiling window left");
-                state.window_manager.tile_left(&state.output_size);
-            }
-            CompositorAction::TileRight => {
-                info!("Action: Tiling window right");
-                state.window_manager.tile_right(&state.output_size);
-            }
             CompositorAction::CycleFocus => {
                 info!("Action: Cycling window focus");
                 state.window_manager.cycle_focus();
@@ -148,6 +166,34 @@ impl InputHandler {
             CompositorAction::ExitCompositor => {
                 info!("Action: Exiting compositor");
                 state.loop_signal.stop();
+            }
+            CompositorAction::ToggleLayout => {
+                info!("Action: Toggling layout mode");
+                state.window_manager.toggle_layout(&state.output_size);
+            }
+            CompositorAction::IncMasterCount => {
+                info!("Action: Incrementing master count");
+                state.window_manager.inc_master_count(&state.output_size);
+            }
+            CompositorAction::DecMasterCount => {
+                info!("Action: Decrementing master count");
+                state.window_manager.dec_master_count(&state.output_size);
+            }
+            CompositorAction::IncMasterRatio => {
+                info!("Action: Incrementing master ratio");
+                state.window_manager.inc_master_ratio(&state.output_size);
+            }
+            CompositorAction::DecMasterRatio => {
+                info!("Action: Decrementing master ratio");
+                state.window_manager.dec_master_ratio(&state.output_size);
+            }
+            CompositorAction::SwitchWorkspace(n) => {
+                info!("Action: Switching to workspace {}", n);
+                state.window_manager.switch_workspace(n, &state.output_size);
+            }
+            CompositorAction::MoveWindowToWorkspace(n) => {
+                info!("Action: Moving focused window to workspace {}", n);
+                state.window_manager.move_focused_to_workspace(n, &state.output_size);
             }
         }
     }
@@ -162,6 +208,8 @@ impl InputHandler {
             delta.1,
             state.output_size,
         );
+
+        tracing::trace!("Pointer motion relative: {:?} -> {:?}", delta, new_pos);
 
         if state.window_manager.handle_pointer_motion(new_pos) {
             return;
@@ -192,6 +240,8 @@ impl InputHandler {
             event.y_transformed(output_size.h),
         );
 
+        tracing::trace!("Pointer motion absolute: transformed to {:?}", pos);
+
         state.window_manager.set_cursor_position(pos.0, pos.1);
 
         let serial = SERIAL_COUNTER.next_serial();
@@ -220,7 +270,7 @@ impl InputHandler {
 
         let cursor_pos = state.window_manager.cursor_position();
         if button_state == ButtonState::Pressed {
-            if cursor_pos.1 < 32.0 {
+            if cursor_pos.1 < 40.0 {
                 state.panel.handle_click(cursor_pos.0, cursor_pos.1);
                 return;
             }
@@ -277,8 +327,13 @@ enum CompositorAction {
     ToggleLauncher,
     CloseWindow,
     ToggleFullscreen,
-    TileLeft,
-    TileRight,
     CycleFocus,
     ExitCompositor,
+    ToggleLayout,
+    IncMasterCount,
+    DecMasterCount,
+    IncMasterRatio,
+    DecMasterRatio,
+    SwitchWorkspace(usize),
+    MoveWindowToWorkspace(usize),
 }

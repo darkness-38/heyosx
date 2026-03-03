@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# hey-install — heyOS CLI Installer (OPTIMIZED)
+# hey-install Ã¢â‚¬â€ heyOS CLI Installer (OPTIMIZED)
 #
 # Optimized for speed, disk performance, and intelligent network handling.
 # =============================================================================
@@ -25,6 +25,14 @@ SELECTED_TIMEZONE="UTC"
 SELECTED_LOCALE="en_US.UTF-8"
 SELECTED_KEYMAP="us"
 OFFLINE_REPO="/opt/heyos-packages"
+VERBOSE=false
+
+# ---- Parse flags ----
+for arg in "$@"; do
+    case "$arg" in
+        -v|--verbose) VERBOSE=true ;;
+    esac
+done
 
 # =============================================================================
 # Utility Functions
@@ -36,6 +44,15 @@ log_warn()  { echo -e "${YELLOW}[WARN]${NC}  $*" | tee -a "$LOG_FILE"; }
 log_err()   { echo -e "${RED}[ERROR]${NC} $*" | tee -a "$LOG_FILE"; }
 log_step()  { echo -e "\n${PINK}${BOLD}==> $*${NC}" | tee -a "$LOG_FILE"; }
 log_task()  { echo -e "${CYAN}[TASK]${NC}  $*" | tee -a "$LOG_FILE"; }
+
+# Helper: run command and hide output unless verbose
+run_verbose() {
+    if $VERBOSE; then
+        "$@" 2>&1 | tee -a "$LOG_FILE"
+    else
+        "$@" &>> "$LOG_FILE"
+    fi
+}
 
 # Display a list of items in a compact grid format
 display_grid() {
@@ -102,7 +119,7 @@ show_banner() {
     ██║  ██║███████╗   ██║   ╚██████╔╝███████║
     ╚═╝  ╚═╝╚══════╝   ╚═╝    ╚═════╝ ╚══════╝
 
-            ═══ System Installer ═══
+            ═══ heyOS Installer ═══
 EOF
     echo -e "${NC}"
 }
@@ -133,16 +150,19 @@ preflight_checks() {
     fi
 
     log_info "Checking network connectivity..."
-    if ! curl -Is --connect-timeout 5 https://google.com/generate_204 &>/dev/null; then
-        if [[ ! -d "$OFFLINE_REPO" ]]; then
-            log_err "No network and no offline cache found. Installation cannot continue."
+    # Robust check: Try pinging reliable IPs first (bypasses DNS issues)
+    if ping -c 1 -W 2 1.1.1.1 &>/dev/null || ping -c 1 -W 2 8.8.8.8 &>/dev/null; then
+        # If IP works, check if DNS and HTTP work
+        if curl -Is --connect-timeout 5 https://google.com/generate_204 &>/dev/null; then
+            log_ok "Network connectivity confirmed."
+            IS_OFFLINE=false
+        else
+            log_err "Network IP is reachable, but DNS or HTTP check failed. Installation cannot continue."
             exit 1
         fi
-        log_warn "No network detected — falling back to OFFLINE mode."
-        IS_OFFLINE=true
     else
-        log_ok "Network connectivity confirmed."
-        IS_OFFLINE=false
+        log_err "No network connection detected. Installation cancelled."
+        exit 1
     fi
 
     log_info "Synchronizing system clock..."
@@ -266,13 +286,13 @@ partition_disk() {
     log_step "Partitioning $TARGET_DISK"
     
     log_info "Wiping existing partition table and signatures..."
-    wipefs -af "$TARGET_DISK" &>/dev/null
-    sgdisk --zap-all "$TARGET_DISK" &>/dev/null
+    run_verbose wipefs -af "$TARGET_DISK"
+    run_verbose sgdisk --zap-all "$TARGET_DISK"
 
     if [[ "$BOOT_MODE" == "uefi" ]]; then
         log_info "Creating GPT partitions (512M EFI, remainder Root)..."
-        sgdisk -n 1:0:+512M -t 1:EF00 -c 1:"EFI" "$TARGET_DISK" &>/dev/null
-        sgdisk -n 2:0:0     -t 2:8300 -c 2:"Root" "$TARGET_DISK" &>/dev/null
+        run_verbose sgdisk -n 1:0:+512M -t 1:EF00 -c 1:"EFI" "$TARGET_DISK"
+        run_verbose sgdisk -n 2:0:0     -t 2:8300 -c 2:"Root" "$TARGET_DISK"
         
         log_info "Probing for new partitions..."
         partprobe "$TARGET_DISK" && udevadm settle
@@ -296,14 +316,14 @@ format_partitions() {
     log_step "Formatting partitions"
     if [[ -n "${EFI_PART:-}" ]]; then
         log_info "Formatting EFI partition $EFI_PART as FAT32..."
-        mkfs.fat -F32 "$EFI_PART" &>/dev/null
+        run_verbose mkfs.fat -F32 "$EFI_PART"
         log_ok "EFI formatted."
     fi
     
     log_info "Formatting root partition $ROOT_PART as $ROOT_FS..."
     case "$ROOT_FS" in
-        ext4)  mkfs.ext4 -F -L "heyOS" "$ROOT_PART" &>/dev/null ;;
-        btrfs) mkfs.btrfs -f -L "heyOS" "$ROOT_PART" &>/dev/null ;;
+        ext4)  run_verbose mkfs.ext4 -F -L "heyOS" "$ROOT_PART" ;;
+        btrfs) run_verbose mkfs.btrfs -f -L "heyOS" "$ROOT_PART" ;;
     esac
     log_ok "Root formatted as $ROOT_FS."
 }
@@ -377,11 +397,17 @@ install_base() {
     local PACKAGES=(
         base linux linux-firmware archlinux-keyring sudo systemd networkmanager
         pipewire pipewire-pulse pipewire-alsa wireplumber open-vm-tools mesa
-        nano vim alacritty firefox thunar wayland wayland-protocols libxkbcommon
+        nano vim neovim alacritty firefox thunar wayland wayland-protocols libxkbcommon
         libinput seatd xorg-xwayland cage greetd ttf-dejavu ttf-liberation noto-fonts
         grub efibootmgr dosfstools os-prober amd-ucode intel-ucode dbus gvfs tumbler
         bash-completion which less man-db man-pages memtest86+ memtest86+-efi
-        haveged
+        haveged git wget curl htop dos2unix btop ttf-jetbrains-mono-nerd ttf-font-awesome
+        otf-font-awesome adobe-source-code-pro-fonts
+        gnome gnome-tweaks gdm
+        plasma-desktop plasma-wayland-session kde-applications sddm dolphin
+        hyprland xdg-desktop-portal-hyprland waybar wofi swww kitty dunst grim slurp
+        wl-clipboard polkit-gnome python-requests jq socat mpv playerctl brightnessctl
+        pamixer libmagick imagemagick make cmake pkg-config npm nodejs python-pip
     )
     [[ "$ROOT_FS" == "btrfs" ]] && PACKAGES+=(btrfs-progs)
 
@@ -406,6 +432,9 @@ configure_system() {
         mount -o remount,noatime,compress=zstd,subvol=@ "$ROOT_PART" "$MOUNT_POINT"
     fi
     genfstab -U "$MOUNT_POINT" >> "$MOUNT_POINT/etc/fstab"
+
+    log_info "Deploying end-4 dotfiles and system skeleton..."
+    cp -r /etc/skel/. "$MOUNT_POINT/etc/skel/"
 
     log_info "Deploying custom heyDM and hey-greeter binaries..."
     cp /usr/bin/heydm "$MOUNT_POINT/usr/bin/heydm"
@@ -436,26 +465,8 @@ EOF
 
     log_info "Deploying hey-greeter and hey-heydm launcher scripts..."
     mkdir -p "$MOUNT_POINT/usr/local/bin"
-    cat << 'EOF' > "$MOUNT_POINT/usr/local/bin/hey-greeter-launch"
-#!/bin/sh
-export WLR_RENDERER=pixman
-export WLR_RENDERER_ALLOW_SOFTWARE=1
-export WLR_NO_HARDWARE_CURSORS=1
-export LIBGL_ALWAYS_SOFTWARE=1
-export SLINT_BACKEND=winit-skia
-export GALLIUM_DRIVER=llvmpipe
-exec cage -s -- /usr/bin/hey-greeter
-EOF
-
-    cat << 'EOF' > "$MOUNT_POINT/usr/local/bin/hey-heydm-launch"
-#!/bin/sh
-export WLR_RENDERER=pixman
-export WLR_RENDERER_ALLOW_SOFTWARE=1
-export WLR_NO_HARDWARE_CURSORS=1
-export LIBGL_ALWAYS_SOFTWARE=1
-export GALLIUM_DRIVER=llvmpipe
-exec cage -d -s -- /usr/bin/heydm
-EOF
+    cp /usr/local/bin/hey-greeter-launch "$MOUNT_POINT/usr/local/bin/"
+    cp /usr/local/bin/hey-heydm-launch "$MOUNT_POINT/usr/local/bin/"
     chmod +x "$MOUNT_POINT/usr/local/bin/hey-greeter-launch" "$MOUNT_POINT/usr/local/bin/hey-heydm-launch"
 
     log_info "Entering chroot for localized configuration..."

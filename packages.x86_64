@@ -56,15 +56,53 @@ pipewire-pulse
 pipewire-alsa
 wireplumber
 
-# ---- Fonts ----
+# ---- Fonts (Core + end-4 Dependencies) ----
 ttf-dejavu
 ttf-liberation
 noto-fonts
 noto-fonts-emoji
+ttf-jetbrains-mono-nerd
+ttf-font-awesome
+otf-font-awesome
+adobe-source-code-pro-fonts
+
+# ---- GNOME Desktop ----
+gnome
+gnome-tweaks
+gdm
+
+# ---- KDE Plasma Desktop ----
+plasma-desktop
+plasma-wayland-session
+kde-applications
+sddm
+
+# ---- Hyprland & end-4 Dependencies ----
+hyprland
+xdg-desktop-portal-hyprland
+waybar
+wofi
+swww
+kitty
+dunst
+grim
+slurp
+wl-clipboard
+polkit-gnome
+python-requests
+jq
+socat
+mpv
+playerctl
+brightnessctl
+pamixer
+libmagick
+imagemagick
 
 # ---- Terminal & Utilities ----
 nano
 vim
+neovim
 alacritty
 bash-completion
 which
@@ -72,18 +110,26 @@ less
 man-db
 man-pages
 fastfetch
+btop
 
 # ---- File Manager ----
 thunar
 gvfs
 tumbler
+dolphin
 
 # ---- Web Browser ----
 firefox
 
-# ---- Development / Build (needed for first-boot tasks) ----
+# ---- Development / Build ----
 gcc
 glibc
+make
+cmake
+pkg-config
+npm
+nodejs
+python-pip
 
 # ---- PAM / Greeter ----
 pam
@@ -91,7 +137,7 @@ greetd
 fontconfig
 polkit
 
-# ---- D-Bus (required by many services) ----
+# ---- D-Bus ----
 dbus
 
 # ---- Misc ----
@@ -102,3 +148,4 @@ htop
 memtest86+
 memtest86+-efi
 edk2-shell
+dos2unix
