@@ -1,48 +1,32 @@
-# Project Roadmap
+# Roadmap: heyDE Development
 
-## Phase 1: Branding Consistency Update (Completed)
-- **Goal:** Unify the "heyOS" branding across bootloader, greeter, and desktop session.
+## Phase 1: Scaffolding & Core Server (Current)
+**Goal:** Initialize the wlroots environment and display an empty output.
+**Plans:** 2 plans
+- [ ] 01-01-PLAN.md — Core Composition (Scaffolding)
+- [ ] 01-02-PLAN.md — Robustness (Signals & Cleanup)
 
-## Phase 2: heydm Foundation for Advanced UI (Completed)
-- **Goal:** Upgrade the compositor (`heydm`) rendering pipeline to support advanced visual effects (blur, rounded corners).
+## Phase 2: Output & XDG-Shell
+**Goal:** Display application windows on the screen.
+- [ ] **Task 2.1:** Implement output layout management.
+- [ ] **Task 2.2:** Add `wlr_xdg_shell` integration for toplevel surfaces.
+- [ ] **Task 2.3:** Basic window management (focus, stacking).
 
-## Phase 3: Fluid Animations (Completed)
-- **Goal:** Introduce smooth, high-refresh-rate window transitions similar to end-4 hyprland.
+## Phase 3: Layer-Shell & Input
+**Goal:** Support UI elements (bars) and interact with windows.
+- [ ] **Task 3.1:** Add `wlr_layer_shell_v1` support.
+- [ ] **Task 3.2:** Implement input handling (mouse/keyboard).
+- [ ] **Task 3.3:** Basic keybindings (e.g., Terminal, Kill window).
 
-## Phase 4: Greeter Polish and Packaging (Completed)
-- **Goal:** Enhance `heygreeter` visuals and ensure everything is correctly packaged into the ISO.
+## Phase 4: GLES2 Rendering & Shaders
+**Goal:** Achieve the "end-4" aesthetic.
+- [ ] **Task 4.1:** Implement custom GLES2 renderer with SDF rounded corners.
+- [ ] **Task 4.2:** Add soft Gaussian shadows.
+- [ ] **Task 4.3:** Implement multi-pass Kawase blur.
+- [ ] **Task 4.4:** Dynamic theming (Monet) logic.
 
-## Phase 5: Fix Build and Smithay Alignment (Completed)
-- **Goal:** Address all compilation errors and align `heydm` with the latest Smithay version.
-
-## Phase 6: Advanced Tiling Layouts (Completed)
-- **Goal:** Implement dynamic master/stack tiling logic with configurable gaps.
-
-## Phase 7: Animation and Interaction Polish (Completed)
-- **Goal:** Implement workspaces, workspace switching animations, and refined interaction feedback.
-
-## Phase 8: Debug & Fix Rendering Pipeline (Completed)
-- **Goal:** Resolve the "black screen" issue and ensure the background and UI are correctly rendered.
-- **Tasks:**
-  - Investigate and fix `render_texture_from_to` issues for the UI texture.
-  - Fix cursor tracking/inversion (ensure the "white dot" follows the actual pointer).
-  - Add debug logging for the rendering loop.
-- **Success Criteria:** The desktop background and status bar shells are visible; the cursor dot follows the pointer accurately.
-
-## Phase 9: High-Fidelity UI & Components (Completed)
-- **Goal:** Implement the final "end-4 hyprland" inspired UI.
-- **Plans:** 3 plans
-- **Requirements:** FEAT-UI-01 through FEAT-UI-06
-- **Tasks:**
-  - [ ] 09-01-PLAN.md — Status Bar & Text Rendering (Clock, Workspaces).
-  - [ ] 09-02-PLAN.md — Living Background & Glassmorphism effects.
-  - [ ] 09-03-PLAN.md — Premium Magnetic Focus & Status Icons.
-- **Success Criteria:** The desktop looks professional and modern, matching the aesthetic goals.
-
-## Phase 10: Integration & Performance
-- **Goal:** Finalize the OS for ISO distribution.
-- **Tasks:**
-  - Optimize rendering performance (damage tracking).
-  - Final ISO build and end-to-end verification.
-  - Documentation and cleanup.
-- **Success Criteria:** heyOS builds into a high-performance ISO that boots into a beautiful, functional desktop.
+## Phase 5: Animations & Polish
+**Goal:** Fluid motion and final refinements.
+- [ ] **Task 5.1:** Physics-based spring animation system.
+- [ ] **Task 5.2:** Workspace swipe gestures (3-finger).
+- [ ] **Task 5.3:** Final stability and performance tuning.

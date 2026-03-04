@@ -1,18 +1,14 @@
-# Integrations
+# External Integrations
 
-## Session Lifecycle
-1. **Boot**: System boots into Arch Linux environment.
-2. **greetd**: The `greetd` service starts automatically.
-3. **heygreeter**: `greetd` is configured to launch `heygreeter`.
-4. **Authentication**: `heygreeter` interacts with PAM for user validation and `greetd-ipc` to start the user session.
-5. **heydm**: Upon successful login, `heydm` is launched as the session compositor/window manager.
+**System Services:**
+- **greetd:** The greeter integrates with `greetd` via a Unix socket (`GREETD_SOCK`) using the `greetd_ipc` protocol in `heygreeter/src/main.rs`.
+- **Display Compositors:** `cage` is used to run the greeter as a single-app Wayland session (`airootfs/usr/local/bin/hey-greeter-launch`).
+- **Desktop Environments:** Integration with Hyprland, GNOME, and KDE Plasma by parsing `.desktop` files in `/usr/share/wayland-sessions` and `/usr/share/xsessions`.
 
-## System Management
-- **transTR Scripts**: Integrated via `/etc/profile.d/transTR.sh`, which adds `/usr/local/bin/transTR` to the system `PATH`. These scripts act as wrappers for `pacman`, `systemctl`, and other core utilities.
-- **Desktop Entries**: `heydm.desktop` defines the Wayland session for display managers.
+**Hardware & Virtualization:**
+- **Mesa/Vulkan:** Graphics drivers for hardware acceleration (`packages.x86_64`).
+- **Software Rendering:** Automatic fallback to `pixman` and `llvmpipe` for VM compatibility (VMware, VirtualBox) via environment variables in `hey-greeter-launch`.
+- **Open-VM-Tools:** Built-in support for VMware guests.
 
-## Build Process
-- **build.sh**: Orchestrates the ISO creation.
-- **profiledef.sh**: Configures `mkarchiso` settings (ISO name, label, bootloaders).
-- **packages.x86_64**: Lists all packages to be included in the ISO, including core system utilities, Wayland stack, and desktop applications.
-- **airootfs**: Contains the overlay filesystem that will be applied to the ISO.
+**Environment Configuration:**
+- **Wayland Environment:** Extensive use of `WLR_*`, `XDG_*`, and `QT_*` variables to ensure session compatibility across different compositors.

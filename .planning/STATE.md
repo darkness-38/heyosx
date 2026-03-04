@@ -1,16 +1,21 @@
-# Project State
+# Project State: heyDE
 
-**Current Milestone:** Project Completed
-**Current Phase:** Finalized
-**Last Update:** Completed Phase 9. Transformed heydm into a high-fidelity desktop UI with a living background, glassmorphism status bar, fontdue text rendering, and premium animated focus effects. Verified with a successful ISO build.
+## Overview
+- **Status:** Initializing
+- **Current Phase:** Phase 1 (Scaffolding)
+- **Next Milestone:** Functional empty compositor window.
 
-**Completed Phases:**
-- [x] Phase 1: Branding Consistency Update
-- [x] Phase 2: heydm Foundation for Advanced UI
-- [x] Phase 3: Fluid Animations
-- [x] Phase 4: Greeter Polish and Packaging
-- [x] Phase 5: Fix Build and Smithay Alignment
-- [x] Phase 6: Advanced Tiling Layouts
-- [x] Phase 7: Animation and Interaction Polish
-- [x] Phase 8: Debug & Fix Rendering Pipeline
-- [x] Phase 9: High-Fidelity UI & Components
+## Task Progress
+- [ ] Phase 1: Scaffolding (0%)
+- [ ] Phase 2: Output & XDG-Shell (0%)
+- [ ] Phase 3: Layer-Shell & Input (0%)
+- [ ] Phase 4: GLES2 Rendering (0%)
+- [ ] Phase 5: Animations & Polish (0%)
+
+## Key Blockers
+- None.
+
+## Contextual Notes
+- Building for Arch Linux (heyOS).
+- Using `wlroots` 0.18+ (stable).
+- Prioritizing `wlr_scene` for modern implementation.

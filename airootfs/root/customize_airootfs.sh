@@ -14,7 +14,7 @@ ln -sf /usr/share/zoneinfo/UTC /etc/localtime
 
 # Create a default live user (skip if already exists)
 if ! id hey &>/dev/null; then
-    useradd -m -G wheel,video,audio,input,seat -s /bin/bash hey
+    useradd -m -G wheel,video,render,audio,input,seat -s /bin/bash hey
 fi
 
 # Set passwords safely using standard chpasswd

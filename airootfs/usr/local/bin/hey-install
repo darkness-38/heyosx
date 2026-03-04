@@ -234,7 +234,8 @@ install_base() {
     log_info "Configuring offline-first pacman..."
     
     # Create a custom pacman.conf for pacstrap that PRIORITIZES the local repo
-    # This ensures it never hits the web if the package exists locally
+    # We include [core] and [extra] only as fallback, but we make them optional
+    # to avoid errors if the mirrorlist is empty or network is down.
     cat << EOF > /tmp/offline-pacman.conf
 [options]
 HoldPkg     = pacman glibc
@@ -253,6 +254,13 @@ Include = /etc/pacman.d/mirrorlist
 [extra]
 Include = /etc/pacman.d/mirrorlist
 EOF
+
+    # Fix: Ensure the mirrorlist exists and is not empty to avoid "no servers configured"
+    # If it's empty, we comment out the core/extra repos to force 100% offline mode
+    if [[ ! -s /etc/pacman.d/mirrorlist ]] || ! grep -q "^Server" /etc/pacman.d/mirrorlist; then
+        log_warn "No active mirrors detected. Enabling strict offline mode."
+        sed -i '/\[core\]/,$d' /tmp/offline-pacman.conf
+    fi
 
     log_info "Deploying system packages from integrated ISO storage..."
     # Use -C to specify our offline-first config

@@ -1,6 +1,21 @@
 {
-  "project_name": "heyOS",
-  "producer": "heyOS Team",
-  "ui_ux_style": "Detailed, highly animated, similar to end-4 hyprland dots",
-  "tech_stack": ["Rust", "Smithay", "Slint", "Wayland", "Arch Linux"]
+  "version": "1.0",
+  "project": "heyDE",
+  "workflow": {
+    "language": "C11",
+    "standard": "C11",
+    "indent": "4 spaces",
+    "braces": "same_line",
+    "naming": "snake_case",
+    "tools": {
+      "compiler": "gcc",
+      "build_system": "make",
+      "linter": "clang-format"
+    }
+  },
+  "gsd": {
+    "auto_commit": false,
+    "validation_required": true,
+    "research_mode": "ecosystem"
+  }
 }

@@ -155,7 +155,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                            key.starts_with("QT_") || 
                                            key == "LIBGL_ALWAYS_SOFTWARE" || 
                                            key == "GALLIUM_DRIVER" ||
-                                           key == "ELECTRON_OZONE_PLATFORM_HINT" 
+                                           key == "ELECTRON_OZONE_PLATFORM_HINT" ||
+                                           key == "AQ_NO_MODIFIERS"
                                         {
                                             env.push(format!("{}={}", key, value));
                                         }
@@ -167,6 +168,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                     if !env.iter().any(|s| s.starts_with("WLR_RENDERER_ALLOW_SOFTWARE=")) {
                                         env.push("WLR_RENDERER_ALLOW_SOFTWARE=1".to_string());
+                                    }
+                                    if !env.iter().any(|s| s.starts_with("AQ_NO_MODIFIERS=")) {
+                                        env.push("AQ_NO_MODIFIERS=1".to_string());
                                     }
 
                                     // Desktop-specific hints

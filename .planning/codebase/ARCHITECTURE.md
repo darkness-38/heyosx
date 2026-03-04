@@ -1,16 +1,15 @@
 # Architecture
 
-## Overview
-HeyOS is a custom Arch Linux distribution focused on a localized (Turkish) user experience and a custom Rust-based desktop environment.
+**Pattern Overview:**
+HeyOS is an Arch Linux-based live distribution built using the `archiso` framework. It utilizes a custom greeter and localized system management scripts.
 
-## Design Patterns
-- **Localized Shell Layer**: Instead of standard aliases, HeyOS uses a set of physical scripts (`transTR`) to provide Turkish commands for system management.
-- **Rust-Centric UI/DM**: Core desktop components are built with Rust for safety and performance, avoiding heavy dependencies like GNOME or KDE.
-- **Smithay-based Compositor**: `heydm` follows the Smithay architectural pattern, where the compositor is a library that manages Wayland clients, inputs, and outputs.
-- **Slint for UI**: Decouples UI design from business logic in the greeter.
+**Layers:**
+- **Build Layer:** Managed by `build.sh` and `profiledef.sh`. It defines how the ISO is packaged and what filesystems are created.
+- **RootFS Layer (`airootfs/`):** A template for the live system's root directory, containing pre-configured system files, custom binaries, and scripts.
+- **Boot Layer:** Dual bootloader support via `efiboot/` (UEFI) and `syslinux/` (BIOS).
 
-## Subsystems
-- **Display Management**: `greetd` + `heygreeter`.
-- **Window Management**: `heydm`.
-- **System Localization**: `transTR` suite.
-- **ISO Distribution**: `mkarchiso` configuration.
+**Display & Greeter Flow:**
+1. The system boots and `systemd` starts the display service.
+2. `greetd` (configured in `airootfs/etc/greetd/config.toml`) is likely the primary login manager.
+3. `airootfs/usr/local/bin/hey-greeter-launch` is invoked to start the custom Rust-based greeter (`heygreeter`).
+4. `airootfs/usr/bin/heydm` serves as a wrapper or coordinator for the display session.

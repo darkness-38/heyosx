@@ -1,18 +1,23 @@
-# Project: heyOS
-**Producer:** heyOS Team
+# heyDE: The heyOS Wayland Compositor
 
-## Overview
-heyOS is a custom Arch Linux distribution with a native Rust Wayland compositor (heydm based on Smithay) and a custom greeter (heygreeter based on Slint). 
+**Vision:**  
+A from-scratch Wayland compositor for **heyOS**, written in C11 using **wlroots**. It replicates the "end-4" (Illogical Impulse) aesthetic—characterized by fluid spring animations, soft shadows, rounded corners, and vibrant glassmorphism—without relying on Hyprland.
 
-## Aesthetic & UI/UX Goals
-The desktop manager (`heydm`) must feature highly detailed and animated UI/UX elements, heavily inspired by "end-4 hyprland" dotfiles, providing a fluid and modern aesthetic out-of-the-box. Branding across the OS should be "heyOS" by the "heyOS Team".
+## Core Identity
+- **Name:** heyDE (hey Desktop Environment)
+- **Target OS:** heyOS (Arch Linux-based)
+- **Engine:** wlroots (C11)
+- **Aesthetic:** "end-4" / Illogical Impulse
+- **Key Visuals:** Bezier-curve spring animations, 12px rounded corners, Kawase blur, Material You (Monet) dynamic theming.
 
-## Technical Stack
-- **Rust**: Core system components
-- **Smithay**: Wayland compositor framework
-- **Slint**: UI definition
-- **Arch Linux**: Base OS distribution
+## Strategic Objectives
+1. **Performance:** Lightweight C11 implementation with efficient GLES2 rendering.
+2. **Aesthetics:** Production-grade visual polish (shadows, blur, smooth motion).
+3. **Modularity:** Clean separation of concerns (server, input, rendering, shells).
+4. **heyOS Native:** Seamless integration with existing `heygreeter` and system scripts.
 
-## Milestone: Fixing heydm (Current)
-- **Goal:** Resolve the "black screen" state and implement a fully-featured, high-fidelity desktop UI.
-- **Key Focus:** Real-time background rendering, integrated status bar, polished window decorations, and a "magnetic" focus system inspired by the end-4 hyprland aesthetic.
+## Tech Stack
+- **Language:** C11
+- **Libraries:** `wlroots`, `wayland-server`, `libinput`, `xkbcommon`, `pixman-1`, `OpenGL ES 2.0`.
+- **Build System:** Makefile (pkg-config).
+- **Rendering:** GLES2 with custom fragment shaders.

@@ -167,10 +167,10 @@ EOF
             fi
 
             # Remove old DB to ensure a clean index
-            rm -f "heyos_offline.db.tar.gz" "heyos_offline.db"
+            rm -f "heyos_offline.db" "heyos_offline.db.tar.gz"
             
             # repo-add will pick up .sig files automatically if they match the package name
-            if ! repo-add "heyos_offline.db.tar.gz" "${pkg_files[@]}" 2>&1 | tee -a "$BUILD_LOG"; then
+            if ! repo-add "heyos_offline.db" "${pkg_files[@]}" 2>&1 | tee -a "$BUILD_LOG"; then
                 log_err "repo-add failed. Check the logs for corrupted packages."
                 exit 1
             fi
