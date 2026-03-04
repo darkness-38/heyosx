@@ -1,0 +1,82 @@
+# =============================================================================
+# heyOS — Target System Packages
+# These packages are pre-cached on the ISO for offline installation.
+# =============================================================================
+
+# Core
+base
+linux
+linux-firmware
+sudo
+systemd
+networkmanager
+btrfs-progs
+
+# Audio & Video
+pipewire
+pipewire-pulse
+pipewire-alsa
+wireplumber
+open-vm-tools
+mesa
+
+# Desktop Basics
+wayland
+wayland-protocols
+libxkbcommon
+libinput
+seatd
+xorg-xwayland
+cage
+greetd
+dbus
+gvfs
+tumbler
+
+# Fonts
+ttf-dejavu
+ttf-liberation
+noto-fonts
+ttf-jetbrains-mono-nerd
+
+# GNOME
+gnome-shell
+gnome-session
+gnome-control-center
+nautilus
+
+# KDE Plasma
+plasma-desktop
+plasma-workspace
+
+# Hyprland
+hyprland
+xdg-desktop-portal-hyprland
+waybar
+wofi
+swww
+kitty
+dunst
+
+# Utilities
+nano
+vim
+neovim
+alacritty
+firefox
+thunar
+bash-completion
+git
+wget
+curl
+htop
+btop
+jq
+
+# Bootloader
+grub
+efibootmgr
+dosfstools
+os-prober
+amd-ucode
+intel-ucode

@@ -111,25 +111,40 @@ build_hey_greeter() {
     cd "${SCRIPT_DIR}"
 }
 
-# TASK B: Cache Offline Packages
+# TASK B: Cache Offline Packages & Create Repo
 cache_packages() {
     local pkg_cache_dir="${SCRIPT_DIR}/pkg-cache"
     local iso_pkg_dir="${AIROOTFS}/opt/heyos-packages"
+    local target_pkg_file="${SCRIPT_DIR}/packages.target"
+    
     mkdir -p "$pkg_cache_dir" "$iso_pkg_dir"
 
-    local install_pkgs=$(awk '/local PACKAGES=\(/{flag=1; next} /\)/{flag=0} flag' "${AIROOTFS}/usr/local/bin/hey-install" | tr -d '\r\\' | tr '\n' ' ')
-    install_pkgs="${install_pkgs} btrfs-progs"
+    # Read packages, ignoring comments and empty lines
+    local install_pkgs=$(grep -v '^#' "$target_pkg_file" | xargs)
     
     local current_hash=$(echo "$install_pkgs" | md5sum | cut -d' ' -f1)
     local stamp="${pkg_cache_dir}/.pkg_stamp"
     
     if [[ ! -f "$stamp" ]] || [[ "$current_hash" != "$(cat "$stamp")" ]]; then
-        log "[CACHE] Updating package cache..."
-        pacman -Syw --cachedir "$pkg_cache_dir" --noconfirm $install_pkgs &>/dev/null || true
+        log "[CACHE] Downloading target packages and dependencies..."
+        # We use a temporary DB path to ensure we get everything even if already on host
+        local tmp_db="/tmp/heyos-tmp-db"
+        mkdir -p "$tmp_db/local"
+        pacman -Syw --cachedir "$pkg_cache_dir" --dbpath "$tmp_db" --noconfirm $install_pkgs &>/dev/null || true
+        
+        log "[REPO] Generating local repository index..."
+        repo-add "${pkg_cache_dir}/heyos_offline.db.tar.gz" "${pkg_cache_dir}/"*.pkg.tar.* &>/dev/null
+        
         echo "$current_hash" > "$stamp"
     fi
-    # Sync fast from cache
+    
+    # Sync everything to ISO
+    log "[SYNC] Integrating packages into ISO..."
     rsync -a --delete "$pkg_cache_dir/" "$iso_pkg_dir/" --exclude=".pkg_stamp"
+    
+    # Copy packages.target to ISO for installer reference
+    mkdir -p "${AIROOTFS}/usr/share/heyos"
+    cp "$target_pkg_file" "${AIROOTFS}/usr/share/heyos/packages.target"
 }
 
 # Run in parallel

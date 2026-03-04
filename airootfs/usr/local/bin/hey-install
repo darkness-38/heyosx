@@ -228,33 +228,38 @@ mount_filesystems() {
 install_base() {
     log_step "Step 5: Installation"
     
-    # Pre-configure pacman for speed
-    sed -i 's/^#ParallelDownloads/ParallelDownloads = 10/' /etc/pacman.conf
+    local target_pkg_file="/usr/share/heyos/packages.target"
+    local pkgs=($(grep -v '^#' "$target_pkg_file" | xargs))
+    
+    log_info "Configuring offline-first pacman..."
+    
+    # Create a custom pacman.conf for pacstrap that PRIORITIZES the local repo
+    # This ensures it never hits the web if the package exists locally
+    cat << EOF > /tmp/offline-pacman.conf
+[options]
+HoldPkg     = pacman glibc
+Architecture = auto
+ParallelDownloads = 10
+SigLevel    = Optional TrustAll
+LocalFileSigLevel = Optional
 
-    if ! $IS_OFFLINE; then
-        log_info "Fastest mirror selection..."
-        reflector --latest 5 --protocol https --sort rate --save /etc/pacman.d/mirrorlist &>/dev/null || true
-    fi
+[heyos_offline]
+SigLevel = Optional TrustAll
+Server = file://${OFFLINE_REPO}
 
-    local pkgs=(
-        base linux linux-firmware sudo systemd networkmanager pipewire pipewire-pulse 
-        pipewire-alsa wireplumber open-vm-tools mesa nano vim neovim alacritty firefox 
-        thunar wayland wayland-protocols libxkbcommon libinput seatd xorg-xwayland 
-        cage greetd ttf-dejavu ttf-liberation noto-fonts grub efibootmgr dosfstools 
-        os-prober amd-ucode intel-ucode dbus gvfs tumbler bash-completion git wget 
-        curl htop btop ttf-jetbrains-mono-nerd gnome-shell gnome-session 
-        gnome-control-center nautilus plasma-desktop plasma-workspace hyprland 
-        xdg-desktop-portal-hyprland waybar wofi swww kitty dunst jq
-    )
-    [[ "$ROOT_FS" == "btrfs" ]] && pkgs+=(btrfs-progs)
+[core]
+Include = /etc/pacman.d/mirrorlist
 
-    if [[ -d "$OFFLINE_REPO" ]]; then
-        log_info "Installing from local cache..."
-        pacstrap -K "$MOUNT_POINT" "${pkgs[@]}" --cachedir "$OFFLINE_REPO" 2>&1 | tee -a "$LOG_FILE"
-    else
-        log_info "Installing from web..."
-        pacstrap -K "$MOUNT_POINT" "${pkgs[@]}" 2>&1 | tee -a "$LOG_FILE"
-    fi
+[extra]
+Include = /etc/pacman.d/mirrorlist
+
+[community]
+Include = /etc/pacman.d/mirrorlist
+EOF
+
+    log_info "Deploying system packages from integrated ISO storage..."
+    # Use -C to specify our offline-first config
+    pacstrap -K -C /tmp/offline-pacman.conf "$MOUNT_POINT" "${pkgs[@]}" 2>&1 | tee -a "$LOG_FILE"
 }
 
 # =============================================================================
