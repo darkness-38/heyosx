@@ -252,9 +252,6 @@ Include = /etc/pacman.d/mirrorlist
 
 [extra]
 Include = /etc/pacman.d/mirrorlist
-
-[community]
-Include = /etc/pacman.d/mirrorlist
 EOF
 
     log_info "Deploying system packages from integrated ISO storage..."

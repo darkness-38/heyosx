@@ -9,16 +9,20 @@ linux
 linux-firmware
 sudo
 systemd
+systemd-sysvcompat
 networkmanager
 btrfs-progs
+mkinitcpio
 
 # Audio & Video
 pipewire
 pipewire-pulse
 pipewire-alsa
+pipewire-jack
 wireplumber
 open-vm-tools
 mesa
+qt6-multimedia-ffmpeg
 
 # Desktop Basics
 wayland

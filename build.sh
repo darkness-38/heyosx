@@ -119,21 +119,62 @@ cache_packages() {
     
     mkdir -p "$pkg_cache_dir" "$iso_pkg_dir"
 
-    # Read packages, ignoring comments and empty lines
-    local install_pkgs=$(grep -v '^#' "$target_pkg_file" | xargs)
+    # Read packages, ignoring comments and empty lines, and STRIP Windows carriage returns
+    local install_pkgs=$(grep -v '^#' "$target_pkg_file" | tr -d '\r' | xargs)
     
     local current_hash=$(echo "$install_pkgs" | md5sum | cut -d' ' -f1)
     local stamp="${pkg_cache_dir}/.pkg_stamp"
     
     if [[ ! -f "$stamp" ]] || [[ "$current_hash" != "$(cat "$stamp")" ]]; then
         log "[CACHE] Downloading target packages and dependencies..."
-        # We use a temporary DB path to ensure we get everything even if already on host
-        local tmp_db="/tmp/heyos-tmp-db"
-        mkdir -p "$tmp_db/local"
-        pacman -Syw --cachedir "$pkg_cache_dir" --dbpath "$tmp_db" --noconfirm $install_pkgs &>/dev/null || true
+        
+        # ISO ISOLATION FIX:
+        # We use a temporary DB path AND a minimal config to ensure we resolve 
+        # dependencies for the TARGET, not based on the HOST system's state.
+        # This prevents host-side conflicts (like libxml2 or systemd versions).
+        local tmp_db="/tmp/heyos-build-db"
+        local tmp_conf="/tmp/heyos-pacman.conf"
+        rm -rf "$tmp_db" && mkdir -p "$tmp_db/local"
+        
+        cat << EOF > "$tmp_conf"
+[options]
+Architecture = auto
+SigLevel = Optional TrustAll
+LocalFileSigLevel = Optional
+[core]
+Include = /etc/pacman.d/mirrorlist
+[extra]
+Include = /etc/pacman.d/mirrorlist
+EOF
+
+        if ! pacman -Syw --cachedir "$pkg_cache_dir" --dbpath "$tmp_db" --config "$tmp_conf" --noconfirm $install_pkgs 2>&1 | tee -a "$BUILD_LOG"; then
+            log_err "Failed to download packages. Check network or package names."
+            return 1
+        fi
         
         log "[REPO] Generating local repository index..."
-        repo-add "${pkg_cache_dir}/heyos_offline.db.tar.gz" "${pkg_cache_dir}/"*.pkg.tar.* &>/dev/null
+        # Use a subshell with explicit error reporting
+        (
+            cd "$pkg_cache_dir"
+            shopt -s nullglob
+            # Fix: Only include the actual package archives, NOT the .sig files
+            # repo-add handles signatures automatically if they exist next to the package
+            local pkg_files=(*.pkg.tar.zst *.pkg.tar.xz *.pkg.tar.gz)
+            
+            if [[ ${#pkg_files[@]} -eq 0 ]]; then
+                log_err "No package files found in $pkg_cache_dir"
+                exit 1
+            fi
+
+            # Remove old DB to ensure a clean index
+            rm -f "heyos_offline.db.tar.gz" "heyos_offline.db"
+            
+            # repo-add will pick up .sig files automatically if they match the package name
+            if ! repo-add "heyos_offline.db.tar.gz" "${pkg_files[@]}" 2>&1 | tee -a "$BUILD_LOG"; then
+                log_err "repo-add failed. Check the logs for corrupted packages."
+                exit 1
+            fi
+        ) || return 1
         
         echo "$current_hash" > "$stamp"
     fi
