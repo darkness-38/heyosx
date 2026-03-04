@@ -73,8 +73,8 @@ The heyOS master build script is a powerhouse of automation. It handles parallel
 ### ⚙️ Build Process
 ```bash
 # Clone the repository
-git clone https://github.com/heyOS-Team/heyos.git
-cd heyos
+git clone https://github.com/darkness-38/heyosx.git
+cd heyosx
 
 # Execute the master build script
 # Flags:
