@@ -1,0 +1,18 @@
+# =============================================================================
+# heyOS — /etc/environment
+# Global environment variables for both TTY and graphical sessions
+# =============================================================================
+
+# ---- VM Compatibility ----
+# Fixes "black screen" and rendering issues in VMware/VirtualBox
+WLR_NO_HARDWARE_CURSORS=1
+WLR_RENDERER_ALLOW_SOFTWARE=1
+
+# ---- Toolkits (Safe defaults for Wayland) ----
+QT_QPA_PLATFORM="wayland;xcb"
+GDK_BACKEND="wayland,x11,*"
+CLUTTER_BACKEND="wayland"
+SDL_VIDEODRIVER="wayland"
+
+# ---- Ozone (Chromium-based apps like VSCode, Electron) ----
+ELECTRON_OZONE_PLATFORM_HINT="auto"

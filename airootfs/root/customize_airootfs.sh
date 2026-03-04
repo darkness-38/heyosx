@@ -27,11 +27,11 @@ systemctl enable vmtoolsd.service 2>/dev/null || true
 systemctl enable seatd.service 2>/dev/null || true
 
 # ---- Multi-DE Support ----
-# Packages are installed, but we only enable greetd (heydm) as the primary entry point.
+# Packages are installed, but we only enable greetd (hey-greeter) as the primary entry point.
 # Users can select GNOME/KDE/Hyprland from the hey-greeter session menu.
 systemctl enable greetd.service 2>/dev/null || true
 
-# Set greetd (heydm) as the default DM
+# Set greetd as the default DM
 systemctl set-default graphical.target
 
 # ---- end-4 Hyprland Dotfiles Setup ----
@@ -51,5 +51,10 @@ chown -R hey:hey /home/hey/
 
 # Clean up
 rm -rf "$DOTS_DIR"
+
+# Ensure permissions for binaries and scripts
+chmod 755 /usr/bin/hey-greeter
+chmod 755 /usr/local/bin/hey-install
+chmod 755 /usr/local/bin/hey-greeter-launch
 
 echo "[heyOS] First-boot setup complete."

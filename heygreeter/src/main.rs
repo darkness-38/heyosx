@@ -70,9 +70,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Ok(entries) = std::fs::read_dir(dir) {
             for entry in entries.flatten() {
                 if let Some(name) = entry.path().file_stem().and_then(|s| s.to_str()) {
-                    let name_str = name.to_string();
-                    if !sessions.iter().any(|s| s.as_str() == name_str) {
-                        sessions.push(name_str.into());
+                    let name_str = name.to_string().to_lowercase();
+                    // Only allow hyprland, plasma (KDE), and gnome
+                    if name_str.contains("hyprland") || 
+                       name_str.contains("plasma") || 
+                       name_str.contains("gnome") 
+                    {
+                        if !sessions.iter().any(|s| s.to_lowercase() == name_str) {
+                            sessions.push(name_str.into());
+                        }
                     }
                 }
             }
@@ -80,8 +86,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if sessions.is_empty() {
-        sessions.push("heydm".into());
+        sessions.push("hyprland".into());
+        sessions.push("plasma".into());
+        sessions.push("gnome".into());
     }
+
 
     app.set_users(Rc::new(VecModel::from(user_models)).into());
     app.set_sessions(Rc::new(VecModel::from(sessions)).into());
@@ -133,9 +142,49 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 Ok(Response::Success) => {
                                     info!("Authentication successful! Starting session...");
                                     
-                                    let cmd = get_session_command(session.as_str());
+                                    let session_name = session.as_str();
+                                    let cmd = get_session_command(session_name);
                                     info!("Executing session command: {:?}", cmd);
-                                    let req = Request::StartSession { cmd, env: vec![] };
+                                    
+                                    // Propagate environment variables for VM compatibility and Wayland defaults
+                                    let mut env = Vec::new();
+                                    for (key, value) in std::env::vars() {
+                                        if (key.starts_with("WLR_") && key != "WLR_RENDERER") || 
+                                           key.starts_with("XDG_") || 
+                                           key.starts_with("GDK_") || 
+                                           key.starts_with("QT_") || 
+                                           key == "LIBGL_ALWAYS_SOFTWARE" || 
+                                           key == "GALLIUM_DRIVER" ||
+                                           key == "ELECTRON_OZONE_PLATFORM_HINT" 
+                                        {
+                                            env.push(format!("{}={}", key, value));
+                                        }
+                                    }
+                                    
+                                    // Ensure critical VM fixes are present if not already set
+                                    if !env.iter().any(|s| s.starts_with("WLR_NO_HARDWARE_CURSORS=")) {
+                                        env.push("WLR_NO_HARDWARE_CURSORS=1".to_string());
+                                    }
+                                    if !env.iter().any(|s| s.starts_with("WLR_RENDERER_ALLOW_SOFTWARE=")) {
+                                        env.push("WLR_RENDERER_ALLOW_SOFTWARE=1".to_string());
+                                    }
+
+                                    // Desktop-specific hints
+                                    if !env.iter().any(|s| s.starts_with("XDG_SESSION_DESKTOP=")) {
+                                        env.push(format!("XDG_SESSION_DESKTOP={}", session_name));
+                                    }
+                                    if !env.iter().any(|s| s.starts_with("XDG_CURRENT_DESKTOP=")) {
+                                        let desktop_val = if session_name.contains("gnome") { "GNOME" } 
+                                                         else if session_name.contains("plasma") { "KDE" }
+                                                         else if session_name.contains("hyprland") { "Hyprland" }
+                                                         else { session_name };
+                                        env.push(format!("XDG_CURRENT_DESKTOP={}", desktop_val));
+                                    }
+                                    if !env.iter().any(|s| s.starts_with("XDG_SESSION_TYPE=")) {
+                                        env.push("XDG_SESSION_TYPE=wayland".to_string());
+                                    }
+                                    
+                                    let req = Request::StartSession { cmd, env };
                                     
                                     if let Err(e) = req.write_to(&mut stream) {
                                         app.set_error_message(format!("Failed to start session: {}", e).into());

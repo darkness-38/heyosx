@@ -66,16 +66,26 @@ ttf-font-awesome
 otf-font-awesome
 adobe-source-code-pro-fonts
 
-# ---- GNOME Desktop ----
-gnome
+# ---- GNOME Desktop (Explicit package list to avoid interactive group prompts) ----
+gnome-shell
+gnome-session
+gnome-control-center
+gnome-console
 gnome-tweaks
+nautilus
 gdm
+xdg-desktop-portal-gnome
 
 # ---- KDE Plasma Desktop ----
 plasma-desktop
-plasma-wayland-session
-kde-applications
+plasma-workspace
 sddm
+dolphin
+konsole
+ark
+gwenview
+okular
+spectacle
 
 # ---- Hyprland & end-4 Dependencies ----
 hyprland
@@ -116,7 +126,6 @@ btop
 thunar
 gvfs
 tumbler
-dolphin
 
 # ---- Web Browser ----
 firefox

@@ -1,22 +1,13 @@
 #!/usr/bin/env bash
 # =============================================================================
-# hey-install Ã¢â‚¬â€ heyOS CLI Installer (OPTIMIZED)
-#
-# Optimized for speed, disk performance, and intelligent network handling.
+# hey-install — heyOS CLI Installer (ULTRA OPTIMIZED)
 # =============================================================================
 
 set -euo pipefail
 export LC_ALL=C
 
 # ---- Color codes ----
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-PINK='\033[1;35m'
-BOLD='\033[1m'
-NC='\033[0m' # No Color
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; CYAN='\033[0;36m'; PINK='\033[1;35m'; BOLD='\033[1m'; NC='\033[0m'
 
 # ---- Configuration ----
 MOUNT_POINT="/mnt"
@@ -43,61 +34,34 @@ log_ok()    { echo -e "${GREEN}[OK]${NC}    $*" | tee -a "$LOG_FILE"; }
 log_warn()  { echo -e "${YELLOW}[WARN]${NC}  $*" | tee -a "$LOG_FILE"; }
 log_err()   { echo -e "${RED}[ERROR]${NC} $*" | tee -a "$LOG_FILE"; }
 log_step()  { echo -e "\n${PINK}${BOLD}==> $*${NC}" | tee -a "$LOG_FILE"; }
-log_task()  { echo -e "${CYAN}[TASK]${NC}  $*" | tee -a "$LOG_FILE"; }
 
-# Helper: run command and hide output unless verbose
 run_verbose() {
-    if $VERBOSE; then
-        "$@" 2>&1 | tee -a "$LOG_FILE"
-    else
-        "$@" &>> "$LOG_FILE"
-    fi
+    if $VERBOSE; then "$@" 2>&1 | tee -a "$LOG_FILE"; else "$@" &>> "$LOG_FILE"; fi
 }
 
-# Display a list of items in a compact grid format
 display_grid() {
     local items=("$@")
     local term_width=$(tput cols 2>/dev/null || echo 80)
     local max_len=0
-    
-    for item in "${items[@]}"; do
-        [[ ${#item} -gt $max_len ]] && max_len=${#item}
-    done
-    
+    for item in "${items[@]}"; do [[ ${#item} -gt $max_len ]] && max_len=${#item}; done
     local col_width=$((max_len + 2))
     local cols=$((term_width / col_width))
     [[ $cols -lt 1 ]] && cols=1
-    
-    # Use printf to create the grid
     local count=0
     for item in "${items[@]}"; do
         printf "%-${col_width}s" "$item"
         ((count+=1))
-        if [[ $((count % cols)) -eq 0 ]]; then
-            echo ""
-        fi
+        [[ $((count % cols)) -eq 0 ]] && echo ""
     done
     echo ""
 }
 
-# Helper: find best match for a string in a list
 fuzzy_match() {
-    local input="$1"
-    shift
-    local items=("$@")
-
-    for i in "${items[@]}"; do
-        [[ "$i" == "$input" ]] && { echo "$i"; return 0; }
-    done
-    for i in "${items[@]}"; do
-        [[ "${i,,}" == "${input,,}" ]] && { echo "$i"; return 0; }
-    done
-    for i in "${items[@]}"; do
-        [[ "${i,,}" == "${input,,}"* ]] && { echo "$i"; return 0; }
-    done
-    for i in "${items[@]}"; do
-        [[ "${i,,}" == *"${input,,}"* ]] && { echo "$i"; return 0; }
-    done
+    local input="$1"; shift; local items=("$@")
+    for i in "${items[@]}"; do [[ "$i" == "$input" ]] && { echo "$i"; return 0; }; done
+    for i in "${items[@]}"; do [[ "${i,,}" == "${input,,}" ]] && { echo "$i"; return 0; }; done
+    for i in "${items[@]}"; do [[ "${i,,}" == "${input,,}"* ]] && { echo "$i"; return 0; }; done
+    for i in "${items[@]}"; do [[ "${i,,}" == *"${input,,}"* ]] && { echo "$i"; return 0; }; done
     return 1
 }
 
@@ -111,472 +75,247 @@ confirm() {
 show_banner() {
     echo -e "${PINK}"
     cat << 'EOF'
-
     ██╗  ██╗███████╗██╗   ██╗ ██████╗ ███████╗
     ██║  ██║██╔════╝╚██╗ ██╔╝██╔═══██╗██╔════╝
     ███████║█████╗   ╚████╔╝ ██║   ██║███████╗
     ██╔══██║██╔══╝    ╚██╔╝  ██║   ██║╚════██║
     ██║  ██║███████╗   ██║   ╚██████╔╝███████║
     ╚═╝  ╚═╝╚══════╝   ╚═╝    ╚═════╝ ╚══════╝
-
             ═══ heyOS Installer ═══
 EOF
     echo -e "${NC}"
 }
 
 # =============================================================================
-# Pre-flight Checks
+# Step 1: Pre-flight & Fast Metadata Gathering
 # =============================================================================
 
 preflight_checks() {
-    log_step "Running pre-flight checks"
-    trap cleanup EXIT
+    log_step "Step 1: Pre-flight Checks"
+    [[ $EUID -ne 0 ]] && { log_err "Must be run as root."; exit 1; }
 
-    log_info "Verifying root privileges..."
-    if [[ $EUID -ne 0 ]]; then
-        log_err "This installer must be run as root (use sudo)."
-        exit 1
-    fi
+    BOOT_MODE="uefi"
+    [[ ! -d /sys/firmware/efi ]] && BOOT_MODE="bios"
+    log_ok "Boot mode: $BOOT_MODE"
 
-    log_info "Checking boot mode (UEFI/BIOS)..."
-    if [[ ! -d /sys/firmware/efi ]]; then
-        log_warn "EFI firmware not detected. This installer requires UEFI boot."
-        if ! confirm "Continue anyway (BIOS mode)?"; then exit 1; fi
-        BOOT_MODE="bios"
-        log_info "Proceeding in BIOS legacy mode."
-    else
-        BOOT_MODE="uefi"
-        log_ok "UEFI boot mode detected"
-    fi
-
-    log_info "Checking network connectivity..."
-    # Robust check: Try pinging reliable IPs first (bypasses DNS issues)
-    if ping -c 1 -W 2 1.1.1.1 &>/dev/null || ping -c 1 -W 2 8.8.8.8 &>/dev/null; then
-        # If IP works, check if DNS and HTTP work
-        if curl -Is --connect-timeout 5 https://google.com/generate_204 &>/dev/null; then
-            log_ok "Network connectivity confirmed."
-            IS_OFFLINE=false
-        else
-            log_err "Network IP is reachable, but DNS or HTTP check failed. Installation cannot continue."
-            exit 1
-        fi
-    else
-        log_err "No network connection detected. Installation cancelled."
-        exit 1
-    fi
-
-    log_info "Synchronizing system clock..."
     timedatectl set-ntp true 2>/dev/null || true
-    log_ok "Clock synchronized."
+    
+    IS_OFFLINE=true
+    if ping -c 1 -W 1 1.1.1.1 &>/dev/null; then
+        IS_OFFLINE=false
+        log_ok "Network detected."
+    else
+        log_warn "Offline mode enabled (No internet)."
+    fi
 }
 
 # =============================================================================
-# Disk & Filesystem Selection
+# Step 2: Batch Interaction (Get all input upfront)
 # =============================================================================
 
-select_disk() {
-    log_step "Disk Selection"
-    echo -e "\n${BOLD}Available disks:${NC}\n"
-    lsblk -dpno NAME,SIZE,MODEL | grep -v "^/dev/loop\|^/dev/sr\|^/dev/ram" || true
-    echo ""
+get_user_input() {
+    log_step "Step 2: Configuration"
 
+    # 1. Disk Selection
+    echo -e "\n${BOLD}Target Disk:${NC}"
+    lsblk -dpno NAME,SIZE,MODEL | grep -v "^/dev/loop\|^/dev/sr\|^/dev/ram" || true
     while true; do
-        echo -en "${BOLD}Enter target disk (e.g., /dev/sda): ${NC}"
+        echo -en "${BOLD}Disk (e.g. /dev/nvme0n1): ${NC}"
         read -r TARGET_DISK
         [[ -b "$TARGET_DISK" ]] && break
-        log_err "'$TARGET_DISK' is not a valid block device."
     done
 
-    echo -e "\n${RED}${BOLD}WARNING: ALL DATA on $TARGET_DISK will be DESTROYED!${NC}"
-    if confirm "Are you absolutely sure?"; then
-        log_ok "Target disk: $TARGET_DISK"
-    else
-        log_info "Installation cancelled by user."
-        exit 1
-    fi
-}
+    # 2. Filesystem
+    echo -en "\n${BOLD}Filesystem (1: ext4, 2: btrfs) [2]: ${NC}"
+    read -r fs_choice
+    ROOT_FS="btrfs"; [[ "$fs_choice" == "1" ]] && ROOT_FS="ext4"
 
-select_filesystem() {
-    log_step "Filesystem Selection"
-    echo -e "\n${BOLD}Choose filesystem for root partition:${NC}"
-    echo "  1) ext4  (stable, fast)"
-    echo "  2) btrfs (advanced, snapshots, compression)"
-    echo ""
+    # 3. Localization (Fast Defaults)
+    echo -en "\n${BOLD}Timezone [${SELECTED_TIMEZONE}]: ${NC}"
+    read -r tz_input
+    [[ -n "$tz_input" && -f "/usr/share/zoneinfo/$tz_input" ]] && SELECTED_TIMEZONE="$tz_input"
+
+    echo -en "${BOLD}Locale [${SELECTED_LOCALE}]: ${NC}"
+    read -r loc_input
+    [[ -n "$loc_input" ]] && SELECTED_LOCALE="$loc_input"
+
+    # 4. Keyboard Layout
+    echo -en "${BOLD}Keyboard Layout [${SELECTED_KEYMAP}]: ${NC}"
+    read -r key_input
+    [[ -n "$key_input" ]] && SELECTED_KEYMAP="$key_input"
+
+    # 5. User Account
+    echo -en "\n${BOLD}New Username: ${NC}"
+    read -r NEW_USER
+    while true; do
+        echo -en "${BOLD}User Password: ${NC}"
+        read -rs USER_PASS; echo ""
+        echo -en "${BOLD}Confirm Password: ${NC}"
+        read -rs USER_PASS_CONF; echo ""
+        [[ "$USER_PASS" == "$USER_PASS_CONF" ]] && break
+        log_err "Passwords do not match."
+    done
 
     while true; do
-        echo -en "${BOLD}Choice [1/2]: ${NC}"
-        read -r fs_choice
-        case "$fs_choice" in
-            1) ROOT_FS="ext4"; break ;;
-            2) ROOT_FS="btrfs"; break ;;
-            *) log_err "Invalid choice." ;;
-        esac
-    done
-    log_ok "Selected filesystem: $ROOT_FS"
-}
-
-# =============================================================================
-# Localization Setup
-# =============================================================================
-
-select_localization() {
-    log_step "Localization Setup"
-
-    # Timezone
-    mapfile -t tz_list < <(find /usr/share/zoneinfo -maxdepth 2 -type f -not -name "*.tab" -not -name "posix*" -not -name "right*" | sed 's|/usr/share/zoneinfo/||' | sort)
-    while true; do
-        echo -en "\n${BOLD}Timezone [${SELECTED_TIMEZONE}]: ${NC}"
-        read -r tz_input
-        [[ -z "$tz_input" ]] && break
-        [[ "$tz_input" == "list" ]] && { display_grid "${tz_list[@]}"; continue; }
-        
-        if [[ -f "/usr/share/zoneinfo/$tz_input" ]]; then
-            SELECTED_TIMEZONE="$tz_input"
-            break
-        else
-            best_match=$(fuzzy_match "$tz_input" "${tz_list[@]}") || true
-            if [[ -n "$best_match" ]]; then
-                SELECTED_TIMEZONE="$best_match"
-                log_info "Autocorrected timezone to '$best_match'"
-                break
-            fi
-            log_err "Invalid timezone."
-        fi
+        echo -en "${BOLD}Root Password: ${NC}"
+        read -rs ROOT_PASS; echo ""
+        echo -en "${BOLD}Confirm Root Password: ${NC}"
+        read -rs ROOT_PASS_CONF; echo ""
+        [[ "$ROOT_PASS" == "$ROOT_PASS_CONF" ]] && break
+        log_err "Passwords do not match."
     done
 
-    # Keymap
-    mapfile -t key_list < <(localectl list-keymaps 2>/dev/null || find /usr/share/kbd/keymaps -type f -name "*.map.gz" -printf "%f\n" | sed 's/.map.gz//' | sort)
-    while true; do
-        echo -en "\n${BOLD}Layout [${SELECTED_KEYMAP}]: ${NC}"
-        read -r key_input
-        [[ -z "$key_input" ]] && break
-        [[ "$key_input" == "list" ]] && { display_grid "${key_list[@]}"; continue; }
-
-        best_match=$(fuzzy_match "$key_input" "${key_list[@]}") || true
-        if [[ -n "$best_match" ]]; then
-            SELECTED_KEYMAP="$best_match"
-            log_info "Autocorrected layout to '$best_match'"
-            break
-        fi
-    done
-
-    # Locale
-    mapfile -t loc_list < <(grep -E "^[a-z]{2}_[A-Z]{2}" /usr/share/i18n/SUPPORTED 2>/dev/null | awk '{print $1}')
-    while true; do
-        echo -en "\n${BOLD}Locale [${SELECTED_LOCALE}]: ${NC}"
-        read -r loc_input
-        [[ -z "$loc_input" ]] && break
-        [[ "$loc_input" == "list" ]] && { display_grid "${loc_list[@]}"; continue; }
-
-        best_match=$(fuzzy_match "$loc_input" "${loc_list[@]}") || true
-        if [[ -n "$best_match" ]]; then
-            SELECTED_LOCALE="$best_match"
-            log_info "Autocorrected locale to '$best_match'"
-            break
-        fi
-    done
-    log_ok "Localization settings saved."
+    echo -e "\n${RED}${BOLD}FINAL WARNING: Data on $TARGET_DISK will be WIPED!${NC}"
+    confirm "Proceed with installation?" || exit 1
 }
 
 # =============================================================================
-# Partitioning & Formatting
+# Step 3: Fast Disk Ops
 # =============================================================================
 
-partition_disk() {
-    log_step "Partitioning $TARGET_DISK"
+apply_disk_ops() {
+    log_step "Step 3: Disk Preparation"
     
-    log_info "Wiping existing partition table and signatures..."
     run_verbose wipefs -af "$TARGET_DISK"
     run_verbose sgdisk --zap-all "$TARGET_DISK"
 
     if [[ "$BOOT_MODE" == "uefi" ]]; then
-        log_info "Creating GPT partitions (512M EFI, remainder Root)..."
         run_verbose sgdisk -n 1:0:+512M -t 1:EF00 -c 1:"EFI" "$TARGET_DISK"
         run_verbose sgdisk -n 2:0:0     -t 2:8300 -c 2:"Root" "$TARGET_DISK"
-        
-        log_info "Probing for new partitions..."
         partprobe "$TARGET_DISK" && udevadm settle
-        
         EFI_PART=$(lsblk -rnpo NAME,PARTN "$TARGET_DISK" | awk '$2=="1" {print $1}')
         ROOT_PART=$(lsblk -rnpo NAME,PARTN "$TARGET_DISK" | awk '$2=="2" {print $1}')
+        run_verbose mkfs.fat -F32 "$EFI_PART"
     else
-        log_info "Creating MBR partitions (BIOS legacy)..."
         echo -e "o\nn\np\n1\n\n\nw" | fdisk "$TARGET_DISK" &>/dev/null
-        
-        log_info "Probing for new partitions..."
         partprobe "$TARGET_DISK" && udevadm settle
-        
         ROOT_PART=$(lsblk -rnpo NAME,PARTN "$TARGET_DISK" | awk '$2=="1" {print $1}')
         EFI_PART=""
     fi
-    log_ok "Partitioning complete. Root: $ROOT_PART, EFI: ${EFI_PART:-None}"
-}
 
-format_partitions() {
-    log_step "Formatting partitions"
-    if [[ -n "${EFI_PART:-}" ]]; then
-        log_info "Formatting EFI partition $EFI_PART as FAT32..."
-        run_verbose mkfs.fat -F32 "$EFI_PART"
-        log_ok "EFI formatted."
-    fi
-    
-    log_info "Formatting root partition $ROOT_PART as $ROOT_FS..."
     case "$ROOT_FS" in
         ext4)  run_verbose mkfs.ext4 -F -L "heyOS" "$ROOT_PART" ;;
         btrfs) run_verbose mkfs.btrfs -f -L "heyOS" "$ROOT_PART" ;;
     esac
-    log_ok "Root formatted as $ROOT_FS."
 }
 
-# =============================================================================
-# Mounting (PERFORMANCE OPTIMIZED)
-# =============================================================================
-
 mount_filesystems() {
-    log_step "Mounting filesystems"
-    
-    # Common mount options for speed
-    local EXT4_OPTS="noatime,data=ordered"
-    local BTRFS_OPTS="noatime,compress=zstd,space_cache=v2,commit=120"
+    log_step "Step 4: Mounting"
+    local BTRFS_OPTS="noatime,compress=zstd,space_cache=v2,discard=async,ssd"
 
     if [[ "$ROOT_FS" == "btrfs" ]]; then
-        log_info "Creating Btrfs subvolumes (@ and @home)..."
         mount "$ROOT_PART" "$MOUNT_POINT"
         btrfs subvolume create "$MOUNT_POINT/@" &>/dev/null
         btrfs subvolume create "$MOUNT_POINT/@home" &>/dev/null
         umount "$MOUNT_POINT"
-
-        log_info "Mounting subvolumes with optimized options (compress=zstd)..."
         mount -o "$BTRFS_OPTS,subvol=@" "$ROOT_PART" "$MOUNT_POINT"
         mkdir -p "$MOUNT_POINT/home"
         mount -o "$BTRFS_OPTS,subvol=@home" "$ROOT_PART" "$MOUNT_POINT/home"
     else
-        log_info "Mounting Ext4 root partition..."
-        mount -o "$EXT4_OPTS" "$ROOT_PART" "$MOUNT_POINT"
+        mount -o "noatime" "$ROOT_PART" "$MOUNT_POINT"
     fi
 
-    if [[ -n "${EFI_PART:-}" ]]; then
-        log_info "Mounting EFI partition to /boot/efi..."
+    if [[ -n "$EFI_PART" ]]; then
         mkdir -p "$MOUNT_POINT/boot/efi"
         mount "$EFI_PART" "$MOUNT_POINT/boot/efi"
     fi
-    log_ok "All filesystems mounted at $MOUNT_POINT"
 }
 
 # =============================================================================
-# Installation (SPEED OPTIMIZED)
+# Step 5: High-Speed Installation
 # =============================================================================
 
 install_base() {
-    log_step "Installing base system"
+    log_step "Step 5: Installation"
+    
+    # Pre-configure pacman for speed
+    sed -i 's/^#ParallelDownloads/ParallelDownloads = 10/' /etc/pacman.conf
 
-    log_info "Enabling parallel downloads in pacman.conf..."
-    sed -i 's/^#ParallelDownloads/ParallelDownloads/' /etc/pacman.conf
-
-    # SPEED: Skip slow keyring init if possible
-    if [[ -d /etc/pacman.d/gnupg ]]; then
-        log_info "Reusing host keyring for speed..."
-    else
-        log_info "Initializing pacman keyring..."
-        # Ensure entropy for pacman-key
-        log_info "Starting haveged for entropy generation..."
-        pacman -Sy --noconfirm haveged &>/dev/null || true
-        systemctl start haveged &>/dev/null || true
-        pacman-key --init &>/dev/null
-        pacman-key --populate archlinux &>/dev/null
-        log_ok "Keyring initialized."
-    fi
-
-    # SPEED: Mirror selection
     if ! $IS_OFFLINE; then
-        log_info "Updating mirrors (selecting fastest 5 HTTPS mirrors)..."
+        log_info "Fastest mirror selection..."
         reflector --latest 5 --protocol https --sort rate --save /etc/pacman.d/mirrorlist &>/dev/null || true
-        log_ok "Mirrorlist optimized."
     fi
 
-    local PACKAGES=(
-        base linux linux-firmware archlinux-keyring sudo systemd networkmanager
-        pipewire pipewire-pulse pipewire-alsa wireplumber open-vm-tools mesa
-        nano vim neovim alacritty firefox thunar wayland wayland-protocols libxkbcommon
-        libinput seatd xorg-xwayland cage greetd ttf-dejavu ttf-liberation noto-fonts
-        grub efibootmgr dosfstools os-prober amd-ucode intel-ucode dbus gvfs tumbler
-        bash-completion which less man-db man-pages memtest86+ memtest86+-efi
-        haveged git wget curl htop dos2unix btop ttf-jetbrains-mono-nerd ttf-font-awesome
-        otf-font-awesome adobe-source-code-pro-fonts
-        gnome gnome-tweaks gdm
-        plasma-desktop plasma-wayland-session kde-applications sddm dolphin
-        hyprland xdg-desktop-portal-hyprland waybar wofi swww kitty dunst grim slurp
-        wl-clipboard polkit-gnome python-requests jq socat mpv playerctl brightnessctl
-        pamixer libmagick imagemagick make cmake pkg-config npm nodejs python-pip
+    local pkgs=(
+        base linux linux-firmware sudo systemd networkmanager pipewire pipewire-pulse 
+        pipewire-alsa wireplumber open-vm-tools mesa nano vim neovim alacritty firefox 
+        thunar wayland wayland-protocols libxkbcommon libinput seatd xorg-xwayland 
+        cage greetd ttf-dejavu ttf-liberation noto-fonts grub efibootmgr dosfstools 
+        os-prober amd-ucode intel-ucode dbus gvfs tumbler bash-completion git wget 
+        curl htop btop ttf-jetbrains-mono-nerd gnome-shell gnome-session 
+        gnome-control-center nautilus plasma-desktop plasma-workspace hyprland 
+        xdg-desktop-portal-hyprland waybar wofi swww kitty dunst jq
     )
-    [[ "$ROOT_FS" == "btrfs" ]] && PACKAGES+=(btrfs-progs)
+    [[ "$ROOT_FS" == "btrfs" ]] && pkgs+=(btrfs-progs)
 
-    # SPEED: If offline repo exists, use it as a local source (Instant)
     if [[ -d "$OFFLINE_REPO" ]]; then
-        log_info "Deploying packages from high-speed offline cache ($OFFLINE_REPO)..."
-        pacstrap -K "$MOUNT_POINT" "${PACKAGES[@]}" --cachedir "$OFFLINE_REPO" 2>&1 | tee -a "$LOG_FILE"
+        log_info "Installing from local cache..."
+        pacstrap -K "$MOUNT_POINT" "${pkgs[@]}" --cachedir "$OFFLINE_REPO" 2>&1 | tee -a "$LOG_FILE"
     else
-        log_info "Downloading and installing base packages..."
-        pacstrap -K "$MOUNT_POINT" "${PACKAGES[@]}" 2>&1 | tee -a "$LOG_FILE"
+        log_info "Installing from web..."
+        pacstrap -K "$MOUNT_POINT" "${pkgs[@]}" 2>&1 | tee -a "$LOG_FILE"
     fi
-    log_ok "Base system installed successfully."
 }
+
+# =============================================================================
+# Step 6: Atomic Configuration
+# =============================================================================
 
 configure_system() {
-    log_step "Configuring installed system"
+    log_step "Step 6: Configuration"
     
-    log_info "Generating fstab..."
-    # SPEED: Fast fstab generation
-    # Remount with safer options before generating fstab so they don't leak into the config
-    if [[ "$ROOT_FS" == "btrfs" ]]; then
-        mount -o remount,noatime,compress=zstd,subvol=@ "$ROOT_PART" "$MOUNT_POINT"
-    fi
     genfstab -U "$MOUNT_POINT" >> "$MOUNT_POINT/etc/fstab"
-
-    log_info "Deploying end-4 dotfiles and system skeleton..."
     cp -r /etc/skel/. "$MOUNT_POINT/etc/skel/"
-
-    log_info "Deploying custom heyDM and hey-greeter binaries..."
-    cp /usr/bin/heydm "$MOUNT_POINT/usr/bin/heydm"
-    cp /usr/bin/hey-greeter "$MOUNT_POINT/usr/bin/hey-greeter"
-    chmod 755 "$MOUNT_POINT/usr/bin/heydm" "$MOUNT_POINT/usr/bin/hey-greeter"
-
-    log_info "Deploying Turkish command wrappers..."
-    cp -r /usr/local/bin/transTR "$MOUNT_POINT/usr/local/bin/"
-    chmod +x "$MOUNT_POINT/usr/local/bin/transTR/"*
-
-    log_info "Setting up Wayland session and Greetd configuration..."
-    mkdir -p "$MOUNT_POINT/usr/share/wayland-sessions"
-    cat << 'EOF' > "$MOUNT_POINT/usr/share/wayland-sessions/heydm.desktop"
-[Desktop Entry]
-Name=heyDM
-Exec=/usr/local/bin/hey-heydm-launch
-Type=Application
-EOF
-
-    mkdir -p "$MOUNT_POINT/etc/greetd"
-    cat << 'EOF' > "$MOUNT_POINT/etc/greetd/config.toml"
-[terminal]
-vt = 1
-[default_session]
-command = "/usr/local/bin/hey-greeter-launch"
-user = "greeter"
-EOF
-
-    log_info "Deploying hey-greeter and hey-heydm launcher scripts..."
-    mkdir -p "$MOUNT_POINT/usr/local/bin"
+    cp /usr/bin/hey-greeter "$MOUNT_POINT/usr/bin/"
     cp /usr/local/bin/hey-greeter-launch "$MOUNT_POINT/usr/local/bin/"
-    cp /usr/local/bin/hey-heydm-launch "$MOUNT_POINT/usr/local/bin/"
-    chmod +x "$MOUNT_POINT/usr/local/bin/hey-greeter-launch" "$MOUNT_POINT/usr/local/bin/hey-heydm-launch"
+    chmod 755 "$MOUNT_POINT/usr/bin/hey-greeter" "$MOUNT_POINT/usr/local/bin/hey-greeter-launch"
 
-    log_info "Entering chroot for localized configuration..."
-    # CHROOT setup
-    cat << CHROOT_SCRIPT > "$MOUNT_POINT/root/hey-setup.sh"
-#!/bin/bash
+    # Chroot scripting (Atomic)
+    cat << EOF | arch-chroot "$MOUNT_POINT"
 set -e
-export LC_ALL=C
-echo "[CHROOT] Setting timezone to ${SELECTED_TIMEZONE}..."
 ln -sf /usr/share/zoneinfo/${SELECTED_TIMEZONE} /etc/localtime
 hwclock --systohc
-
-echo "[CHROOT] Generating locale ${SELECTED_LOCALE}..."
-if grep -q "^#${SELECTED_LOCALE}" /etc/locale.gen; then
-    sed -i "s/^#${SELECTED_LOCALE}/${SELECTED_LOCALE}/" /etc/locale.gen
-else
-    echo "${SELECTED_LOCALE} UTF-8" >> /etc/locale.gen
-fi
+echo "${SELECTED_LOCALE} UTF-8" >> /etc/locale.gen
 locale-gen &>/dev/null
 echo "LANG=${SELECTED_LOCALE}" > /etc/locale.conf
-
-echo "[CHROOT] Setting hostname and keymap..."
 echo "KEYMAP=${SELECTED_KEYMAP}" > /etc/vconsole.conf
 echo "heyOS" > /etc/hostname
-
-echo "[CHROOT] Enabling system services..."
-systemctl enable NetworkManager.service seatd.service greetd.service haveged.service &>/dev/null
+systemctl enable NetworkManager seatd greetd &>/dev/null
 systemctl set-default graphical.target &>/dev/null
-
-echo "[CHROOT] Configuring user groups and permissions..."
-usermod -aG seat greeter || true
+useradd -m -G wheel,video,render,audio,input,seat -s /bin/bash "$NEW_USER"
+echo "root:${ROOT_PASS}" | chpasswd
+echo "${NEW_USER}:${USER_PASS}" | chpasswd
 echo "%wheel ALL=(ALL:ALL) ALL" > /etc/sudoers.d/00-heyos
 chmod 440 /etc/sudoers.d/00-heyos
-
-echo "[CHROOT] Rebuilding initramfs..."
 mkinitcpio -P &>/dev/null
-CHROOT_SCRIPT
+EOF
 
-    chmod +x "$MOUNT_POINT/root/hey-setup.sh"
-    arch-chroot "$MOUNT_POINT" /root/hey-setup.sh 2>&1 | tee -a "$LOG_FILE"
-    rm -f "$MOUNT_POINT/root/hey-setup.sh"
-    log_ok "System configuration complete."
-}
-
-install_bootloader() {
-    log_step "Installing bootloader"
+    # Bootloader
+    log_info "Bootloader..."
     if [[ "$BOOT_MODE" == "uefi" ]]; then
-        log_info "Installing GRUB for UEFI..."
-        arch-chroot "$MOUNT_POINT" grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=heyOS --recheck &>/dev/null
+        arch-chroot "$MOUNT_POINT" grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=heyOS --removable &>/dev/null
     else
-        log_info "Installing GRUB for BIOS (Legacy)..."
         arch-chroot "$MOUNT_POINT" grub-install --target=i386-pc "$TARGET_DISK" &>/dev/null
     fi
-    
-    log_info "Generating GRUB config file..."
+    sed -i 's/^#GRUB_DISABLE_OS_PROBER=false/GRUB_DISABLE_OS_PROBER=false/' "$MOUNT_POINT/etc/default/grub"
     arch-chroot "$MOUNT_POINT" grub-mkconfig -o /boot/grub/grub.cfg &>/dev/null
-    log_ok "Bootloader ready."
-}
-
-setup_user() {
-    log_step "User Account Setup"
-    echo -en "Set root password:\n"
-    while ! arch-chroot "$MOUNT_POINT" passwd; do :; done
-
-    echo ""
-    while true; do
-        echo -en "Enter username: "
-        read -r NEW_USER
-        [[ "$NEW_USER" =~ ^[a-z_][a-z0-9_-]*$ ]] && break
-        log_err "Invalid username. Use lowercase letters and numbers only."
-    done
-
-    log_info "Creating user '$NEW_USER' with render and seat access..."
-    arch-chroot "$MOUNT_POINT" useradd -m -G wheel,video,render,audio,input,seat -s /bin/bash "$NEW_USER"
-    
-    echo -en "Set password for '$NEW_USER':\n"
-    while ! arch-chroot "$MOUNT_POINT" passwd "$NEW_USER"; do :; done
-    log_ok "User '$NEW_USER' created successfully."
 }
 
 cleanup() {
-    log_step "Finalizing..."
-    log_info "Unmounting all filesystems..."
-    mountpoint -q "$MOUNT_POINT" && umount -R "$MOUNT_POINT" &>/dev/null || true
-    trap - EXIT
-    log_ok "Cleanup complete."
+    log_step "Finalizing"
+    umount -R "$MOUNT_POINT" &>/dev/null || true
+    log_ok "heyOS Installed! Total time: $(( (SECONDS - BUILD_START) / 60 ))m $(( (SECONDS - BUILD_START) % 60 ))s"
 }
 
 # =============================================================================
 # Main
 # =============================================================================
-
-main() {
-    show_banner
-    preflight_checks
-    select_disk
-    select_filesystem
-    select_localization
-    
-    # EXECUTION START
-    partition_disk
-    format_partitions
-    mount_filesystems
-    install_base
-    configure_system
-    install_bootloader
-    setup_user
-    cleanup
-    
-    echo -e "\n${GREEN}${BOLD}heyOS installation complete! Reboot to enjoy.${NC}"
-}
-
-main "$@"
+BUILD_START=$SECONDS
+show_banner
+preflight_checks
+get_user_input
+apply_disk_ops
+mount_filesystems
+install_base
+configure_system
+cleanup

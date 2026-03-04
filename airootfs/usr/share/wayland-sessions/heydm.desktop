@@ -1,6 +1,0 @@
-[Desktop Entry]
-Name=heyDM
-Comment=The custom Wayland compositor for heyOS
-Exec=/usr/local/bin/hey-heydm-launch
-Type=Application
-DesktopNames=heydm
