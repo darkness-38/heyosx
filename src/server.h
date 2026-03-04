@@ -9,6 +9,7 @@
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_xdg_shell.h>
+#include <wlr/types/wlr_layer_shell_v1.h>
 
 struct heyde_server {
     struct wl_display *wl_display;
@@ -24,6 +25,10 @@ struct heyde_server {
     struct wlr_xdg_shell *xdg_shell;
     struct wl_list toplevels;
     struct wl_listener new_xdg_surface;
+
+    struct wlr_layer_shell_v1 *layer_shell;
+    struct wl_list layer_surfaces;
+    struct wl_listener new_layer_shell_surface;
 };
 
 struct heyde_output {
@@ -47,6 +52,18 @@ struct heyde_toplevel {
     struct wl_listener request_resize;
     struct wl_listener request_maximize;
     struct wl_listener request_fullscreen;
+};
+
+struct heyde_layer_surface {
+    struct wl_list link;
+    struct heyde_server *server;
+    struct wlr_layer_surface_v1 *wlr_layer_surface;
+    struct wlr_scene_layer_surface_v1 *scene_layer_surface;
+
+    struct wl_listener map;
+    struct wl_listener unmap;
+    struct wl_listener destroy;
+    struct wl_listener surface_commit;
 };
 
 #endif
