@@ -8,10 +8,6 @@
 </p>
 
 <p align="center">
-  <img src="photos/greeter.png" width="850" style="border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);" alt="heyOS Greeter Preview">
-</p>
-
-<p align="center">
   <strong>The definitive Arch-based experience, redefined by Rust.</strong><br>
   A high-fidelity distribution engineered for performance, stability, and breathtaking aesthetics.<br>
   <em>Designed and maintained by the <strong>heyOS Team</strong>.</em>
