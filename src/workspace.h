@@ -13,6 +13,7 @@ struct heyde_workspace {
 };
 
 void heyde_workspaces_init(struct heyde_server *server);
+void heyde_workspaces_update_layout(struct heyde_server *server);
 void heyde_workspace_activate(struct heyde_server *server, int index);
 void heyde_workspace_swipe(struct heyde_server *server, double delta_x);
 void heyde_workspace_swipe_begin(struct heyde_server *server);

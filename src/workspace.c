@@ -14,17 +14,26 @@ void heyde_workspaces_init(struct heyde_server *server) {
     server->workspace_tree = wlr_scene_tree_create(server->layers[2]);
     server->current_workspace = 0;
 
-    struct wlr_box layout_box;
-    wlr_output_layout_get_box(server->output_layout, NULL, &layout_box);
-    int width = layout_box.width;
-    if (width == 0) width = 1920; // Fallback
-
     for (int i = 0; i < HEYDE_NUM_WORKSPACES; i++) {
         server->workspaces[i].server = server;
         server->workspaces[i].index = i;
         server->workspaces[i].scene_tree = wlr_scene_tree_create(server->workspace_tree);
+    }
+    heyde_workspaces_update_layout(server);
+}
+
+void heyde_workspaces_update_layout(struct heyde_server *server) {
+    struct wlr_box layout_box;
+    wlr_output_layout_get_box(server->output_layout, NULL, &layout_box);
+    int width = layout_box.width;
+    if (width == 0) width = 1920;
+
+    for (int i = 0; i < HEYDE_NUM_WORKSPACES; i++) {
         wlr_scene_node_set_position(&server->workspaces[i].scene_tree->node, i * width, 0);
     }
+    
+    // Also update the current workspace scroll position
+    wlr_scene_node_set_position(&server->workspace_tree->node, -server->current_workspace * width, 0);
 }
 
 void heyde_workspace_activate(struct heyde_server *server, int index) {

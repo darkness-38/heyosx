@@ -686,6 +686,14 @@ static void server_new_output_handler(struct wl_listener *listener, void *data) 
     wlr_output_state_finish(&state);
 
     wlr_output_create_global(wlr_output, server->wl_display);
+
+    // Resize background to cover the whole layout
+    struct wlr_box layout_box;
+    wlr_output_layout_get_box(server->output_layout, NULL, &layout_box);
+    wlr_scene_rect_set_size(server->background_rect, layout_box.width, layout_box.height);
+
+    // Update workspace layout
+    heyde_workspaces_update_layout(server);
 }
 
 int main(int argc, char *argv[]) {
@@ -720,26 +728,18 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    // 1. Primary attempt: Let wlroots decide (honors WLR_RENDERER_ALLOW_SOFTWARE=1 set above)
+    // 1. Try to create renderer (honors WLR_RENDERER_ALLOW_SOFTWARE=1)
     server.renderer = wlr_renderer_autocreate(server.backend);
 
-    // 2. Fallback: If hardware/auto fails, explicitly try software GLES2 via wlroots
+    // 2. Fallback: Pixman (No shaders, but guaranteed to show a screen in VMs)
     if (!server.renderer) {
-        wlr_log(WLR_INFO, "failed to create default renderer, retrying with explicit GLES2 software...");
-        setenv("WLR_RENDERER", "gles2", 1);
-        // We do NOT set LIBGL_ALWAYS_SOFTWARE here because it conflicts with the DRM backend device
-        server.renderer = wlr_renderer_autocreate(server.backend);
-    }
-
-    // 3. Final Fallback: Pixman (No shaders, but guaranteed to show a screen)
-    if (!server.renderer) {
-        wlr_log(WLR_INFO, "failed to create GLES2 renderer, retrying with Pixman...");
+        wlr_log(WLR_INFO, "Failed to create GLES2 renderer, falling back to Pixman...");
         setenv("WLR_RENDERER", "pixman", 1);
         server.renderer = wlr_renderer_autocreate(server.backend);
     }
 
     if (!server.renderer) {
-        wlr_log(WLR_ERROR, "failed to create renderer (tried hardware, software GLES2, and Pixman)");
+        wlr_log(WLR_ERROR, "failed to create renderer (tried GLES2 and Pixman)");
         return 1;
     }
 
@@ -805,10 +805,8 @@ int main(int argc, char *argv[]) {
     heyde_animation_manager_init(&server.animation_mgr);
     heyde_workspaces_init(&server);
 
-    struct wlr_box layout_box;
-    wlr_output_layout_get_box(server.output_layout, NULL, &layout_box);
-    server.background_rect = wlr_scene_rect_create(server.layers[0],
-        layout_box.width, layout_box.height, server.monet_colors->background);
+    // Initialize background with a placeholder, will be resized on new_output
+    server.background_rect = wlr_scene_rect_create(server.layers[0], 0, 0, server.monet_colors->background);
 
     server.new_output.notify = server_new_output_handler;
     wl_signal_add(&server.backend->events.new_output, &server.new_output);
