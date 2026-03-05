@@ -720,23 +720,21 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    // 1. Primary attempt: Let wlroots decide (honors WLR_RENDERER_ALLOW_SOFTWARE=1 set above)
     server.renderer = wlr_renderer_autocreate(server.backend);
+
+    // 2. Fallback: If hardware/auto fails, explicitly try software GLES2 via wlroots
     if (!server.renderer) {
-        wlr_log(WLR_INFO, "failed to create hardware renderer, retrying with forced GLES2 software...");
+        wlr_log(WLR_INFO, "failed to create default renderer, retrying with explicit GLES2 software...");
         setenv("WLR_RENDERER", "gles2", 1);
-        setenv("LIBGL_ALWAYS_SOFTWARE", "1", 1);
-        setenv("MESA_LOADER_DRIVER_OVERRIDE", "swrast", 1);
-        setenv("GALLIUM_DRIVER", "llvmpipe", 1);
-        setenv("WLR_RENDERER_ALLOW_SOFTWARE", "1", 1);
-        setenv("WLR_NO_HARDWARE_CURSORS", "1", 1);
+        // We do NOT set LIBGL_ALWAYS_SOFTWARE here because it conflicts with the DRM backend device
         server.renderer = wlr_renderer_autocreate(server.backend);
     }
 
+    // 3. Final Fallback: Pixman (No shaders, but guaranteed to show a screen)
     if (!server.renderer) {
         wlr_log(WLR_INFO, "failed to create GLES2 renderer, retrying with Pixman...");
         setenv("WLR_RENDERER", "pixman", 1);
-        unsetenv("LIBGL_ALWAYS_SOFTWARE");
-        unsetenv("MESA_LOADER_DRIVER_OVERRIDE");
         server.renderer = wlr_renderer_autocreate(server.backend);
     }
 
