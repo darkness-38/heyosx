@@ -725,8 +725,10 @@ int main(int argc, char *argv[]) {
         wlr_log(WLR_INFO, "failed to create hardware renderer, retrying with forced GLES2 software...");
         setenv("WLR_RENDERER", "gles2", 1);
         setenv("LIBGL_ALWAYS_SOFTWARE", "1", 1);
-        // Force wlroots to ignore any DRM devices for rendering during this pass
+        setenv("MESA_LOADER_DRIVER_OVERRIDE", "swrast", 1);
+        setenv("GALLIUM_DRIVER", "llvmpipe", 1);
         setenv("WLR_RENDERER_ALLOW_SOFTWARE", "1", 1);
+        setenv("WLR_NO_HARDWARE_CURSORS", "1", 1);
         server.renderer = wlr_renderer_autocreate(server.backend);
     }
 
@@ -734,6 +736,7 @@ int main(int argc, char *argv[]) {
         wlr_log(WLR_INFO, "failed to create GLES2 renderer, retrying with Pixman...");
         setenv("WLR_RENDERER", "pixman", 1);
         unsetenv("LIBGL_ALWAYS_SOFTWARE");
+        unsetenv("MESA_LOADER_DRIVER_OVERRIDE");
         server.renderer = wlr_renderer_autocreate(server.backend);
     }
 
