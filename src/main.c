@@ -657,7 +657,13 @@ int main(int argc, char *argv[]) {
     }
 
     if (!server.renderer) {
-        wlr_log(WLR_ERROR, "failed to create renderer (tried hardware and software GLES2)");
+        wlr_log(WLR_INFO, "failed to create GLES2 renderer, retrying with Pixman...");
+        setenv("WLR_RENDERER", "pixman", 1);
+        server.renderer = wlr_renderer_autocreate(server.backend);
+    }
+
+    if (!server.renderer) {
+        wlr_log(WLR_ERROR, "failed to create renderer (tried hardware, software GLES2, and Pixman)");
         return 1;
     }
 
@@ -725,11 +731,11 @@ int main(int argc, char *argv[]) {
     server.new_output.notify = server_new_output_handler;
     wl_signal_add(&server.backend->events.new_output, &server.new_output);
 
-    server.xdg_shell = wlr_xdg_shell_create(server.wl_display, 6);
+    server.xdg_shell = wlr_xdg_shell_create(server.wl_display, 3);
     server.new_xdg_surface.notify = server_new_xdg_surface_handler;
     wl_signal_add(&server.xdg_shell->events.new_surface, &server.new_xdg_surface);
 
-    server.layer_shell = wlr_layer_shell_v1_create(server.wl_display, 5);
+    server.layer_shell = wlr_layer_shell_v1_create(server.wl_display, 4);
     server.new_layer_shell_surface.notify = server_new_layer_shell_surface_handler;
     wl_signal_add(&server.layer_shell->events.new_surface, &server.new_layer_shell_surface);
 

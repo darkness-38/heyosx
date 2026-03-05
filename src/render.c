@@ -97,6 +97,11 @@ static void fb_init(struct blur_fb *fb, int width, int height) {
 }
 
 void heyde_render_init(struct heyde_server *server) {
+    if (!wlr_renderer_is_gles2(server->renderer)) {
+        wlr_log(WLR_INFO, "Skipping GLES2 shader initialization (not using GLES2 renderer)");
+        return;
+    }
+
     char *vert_src = load_file("src/shaders/basic.vert");
     char *corner_frag_src = load_file("src/shaders/corner.frag");
     char *shadow_frag_src = load_file("src/shaders/shadow.frag");
