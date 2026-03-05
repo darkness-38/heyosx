@@ -87,8 +87,8 @@ MIRROR_LIST="/etc/pacman.d/mirrorlist"
 if [[ -f "$MIRROR_LIST" ]] && [[ $(find "$MIRROR_LIST" -mmin -720 2>/dev/null) ]]; then
     log_warn "Mirrorlist is fresh, skipping reflector."
 else
-    log "Optimizing mirrors..."
-    reflector --latest 10 --protocol https --sort rate --save "$MIRROR_LIST" &>/dev/null || true
+    log "Optimizing mirrors (Top 50 fastest)..."
+    reflector --latest 50 --protocol https --sort rate --save "$MIRROR_LIST" &>/dev/null || true
 fi
 
 # =============================================================================
@@ -108,7 +108,25 @@ build_hey_greeter() {
     
     RUSTFLAGS="$rust_flags" cargo build --release -j "$TOTAL_JOBS" --quiet
     cp "target/release/hey-greeter" "${AIROOTFS}/usr/bin/hey-greeter"
+    cp "target/release/hey-greeter" "${AIROOTFS}/usr/bin/heydm"
+    cp "${SCRIPT_DIR}/airootfs/usr/local/bin/hey-greeter-launch" "${AIROOTFS}/usr/bin/hey-greeter-launch"
     cd "${SCRIPT_DIR}"
+}
+
+# TASK C: Build heyDE Compositor
+build_heyde() {
+    log "[C] Building heyDE compositor..."
+    cd "${SCRIPT_DIR}"
+    # We use WSL to build since it needs wlroots/glesv2/etc
+    if command -v make &>/dev/null; then
+        make clean && make -j "$TOTAL_JOBS"
+    else
+        # Fallback for when running on host that might not have make in path
+        wsl make clean && wsl make -j "$TOTAL_JOBS"
+    fi
+    cp "heyde" "${AIROOTFS}/usr/bin/heyde"
+    mkdir -p "${AIROOTFS}/usr/share/heyde/shaders"
+    cp src/shaders/* "${AIROOTFS}/usr/share/heyde/shaders/"
 }
 
 # TASK B: Cache Offline Packages & Create Repo
@@ -139,6 +157,8 @@ cache_packages() {
         cat << EOF > "$tmp_conf"
 [options]
 Architecture = auto
+ParallelDownloads = 5
+XferCommand = /usr/bin/curl -L -C - -f --retry 3 --retry-delay 3 -o %o %u
 SigLevel = Optional TrustAll
 LocalFileSigLevel = Optional
 [core]
@@ -167,10 +187,10 @@ EOF
             fi
 
             # Remove old DB to ensure a clean index
-            rm -f "heyos_offline.db" "heyos_offline.db.tar.gz"
+            rm -f "heyos_offline.db.tar.zst" "heyos_offline.db.tar.zst.tar.gz"
             
             # repo-add will pick up .sig files automatically if they match the package name
-            if ! repo-add "heyos_offline.db" "${pkg_files[@]}" 2>&1 | tee -a "$BUILD_LOG"; then
+            if ! repo-add "heyos_offline.db.tar.zst" "${pkg_files[@]}" 2>&1 | tee -a "$BUILD_LOG"; then
                 log_err "repo-add failed. Check the logs for corrupted packages."
                 exit 1
             fi
@@ -191,10 +211,13 @@ EOF
 # Run in parallel
 build_hey_greeter &
 PID_RUST=$!
+build_heyde &
+PID_HEYDE=$!
 cache_packages &
 PID_CACHE=$!
 
 wait $PID_RUST || { log_err "Rust build failed"; exit 1; }
+wait $PID_HEYDE || { log_err "heyDE build failed"; exit 1; }
 wait $PID_CACHE || { log_err "Package caching failed"; exit 1; }
 
 log_ok "Parallel tasks completed."

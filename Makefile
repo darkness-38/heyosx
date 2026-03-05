@@ -8,7 +8,7 @@ WAYLAND_SCANNER = $(shell pkg-config --variable=wayland_scanner wayland-scanner)
 XDG_SHELL_XML = $(WAYLAND_PROTOCOLS)/stable/xdg-shell/xdg-shell.xml
 LAYER_SHELL_XML = /usr/share/wlr-protocols/unstable/wlr-layer-shell-unstable-v1.xml
 
-SRC = src/main.c src/monet.c src/render.c src/animation.c xdg-shell-protocol.c wlr-layer-shell-unstable-v1-protocol.c
+SRC = src/main.c src/monet.c src/render.c src/animation.c src/workspace.c xdg-shell-protocol.c wlr-layer-shell-unstable-v1-protocol.c
 OBJ = $(SRC:.c=.o)
 TARGET = heyde
 

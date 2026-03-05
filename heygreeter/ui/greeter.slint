@@ -9,7 +9,7 @@ export component AppWindow inherits Window {
     callback login(string, string, string);
 
     in property <[string]> users: ["marvin", "hey"];
-    in property <[string]> sessions: ["gnome", "hyprland"];
+    in property <[string]> sessions: ["heyde", "plasma"];
     in property <string> error-message: "";
     
     in property <string> current-time: "12:20 AM";
@@ -363,7 +363,6 @@ export component AppWindow inherits Window {
             ComboBox {
                 height: 30px;
                 model: root.sessions;
-                current-value: root.selected-session;
                 selected(val) => { root.selected-session = val; }
             }
         }

@@ -54,6 +54,8 @@ rm -rf "$DOTS_DIR"
 
 # Ensure permissions for binaries and scripts
 chmod 755 /usr/bin/hey-greeter
+chmod 755 /usr/bin/heydm
+chmod 755 /usr/bin/heyde
 chmod 755 /usr/local/bin/hey-install
 chmod 755 /usr/local/bin/hey-greeter-launch
 

@@ -42,3 +42,16 @@ void heyde_animation_tick(struct heyde_animation_manager *manager, double dt) {
 void heyde_animation_add(struct heyde_animation_manager *manager, struct heyde_animation *animation) {
 	wl_list_insert(&manager->animations, &animation->link);
 }
+
+void heyde_animation_cancel(struct heyde_animation_manager *manager, void *user_data) {
+	struct heyde_animation *animation, *tmp;
+	wl_list_for_each_safe(animation, tmp, &manager->animations, link) {
+		if (animation->user_data == user_data) {
+			wl_list_remove(&animation->link);
+			if (animation->on_complete) {
+				animation->on_complete(animation);
+			}
+			free(animation);
+		}
+	}
+}

@@ -27,5 +27,6 @@ void heyde_spring_tick(struct heyde_spring *spring, double dt);
 void heyde_animation_manager_init(struct heyde_animation_manager *manager);
 void heyde_animation_tick(struct heyde_animation_manager *manager, double dt);
 void heyde_animation_add(struct heyde_animation_manager *manager, struct heyde_animation *animation);
+void heyde_animation_cancel(struct heyde_animation_manager *manager, void *user_data);
 
 #endif

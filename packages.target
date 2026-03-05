@@ -32,6 +32,7 @@ libinput
 seatd
 xorg-xwayland
 cage
+wlroots0.18
 greetd
 dbus
 gvfs
@@ -42,12 +43,6 @@ ttf-dejavu
 ttf-liberation
 noto-fonts
 ttf-jetbrains-mono-nerd
-
-# GNOME
-gnome-shell
-gnome-session
-gnome-control-center
-nautilus
 
 # KDE Plasma
 plasma-desktop

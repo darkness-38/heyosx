@@ -2,14 +2,12 @@
 # hey-greeter-launch — Wrapper to start cage + hey-greeter with safe rendering
 # Forces software rendering so it works inside VMs (VMware, VirtualBox, QEMU).
 
-export WLR_RENDERER=pixman
 export WLR_RENDERER_ALLOW_SOFTWARE=1
 export WLR_NO_HARDWARE_CURSORS=1
-export LIBGL_ALWAYS_SOFTWARE=1
 
 # For Slint to use software rendering
 export SLINT_BACKEND=winit-skia
 export GALLIUM_DRIVER=llvmpipe
 
 CMD="${1:-/usr/bin/hey-greeter}"
-exec cage -s -- "$CMD"
+WLR_RENDERER=pixman LIBGL_ALWAYS_SOFTWARE=1 exec cage -s -- "$CMD"

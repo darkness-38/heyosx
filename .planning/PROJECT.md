@@ -16,6 +16,10 @@ A from-scratch Wayland compositor for **heyOS**, written in C11 using **wlroots*
 3. **Modularity:** Clean separation of concerns (server, input, rendering, shells).
 4. **heyOS Native:** Seamless integration with existing `heygreeter` and system scripts.
 
+## Milestones
+- [x] **Milestone 1: Core Foundation** — Basic wlroots server, XDG-Shell, and GLES2 rendering.
+- [ ] **Milestone 2: System Integration & Polish** — Fix permissions (heydm), stable session handoff, and VM compatibility.
+
 ## Tech Stack
 - **Language:** C11
 - **Libraries:** `wlroots`, `wayland-server`, `libinput`, `xkbcommon`, `pixman-1`, `OpenGL ES 2.0`.

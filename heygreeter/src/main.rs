@@ -71,10 +71,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             for entry in entries.flatten() {
                 if let Some(name) = entry.path().file_stem().and_then(|s| s.to_str()) {
                     let name_str = name.to_string().to_lowercase();
-                    // Only allow hyprland, plasma (KDE), and gnome
-                    if name_str.contains("hyprland") || 
-                       name_str.contains("plasma") || 
-                       name_str.contains("gnome") 
+                    // Only allow heyde and plasma (KDE)
+                    if name_str.contains("heyde") || 
+                       name_str.contains("plasma")
                     {
                         if !sessions.iter().any(|s| s.to_lowercase() == name_str) {
                             sessions.push(name_str.into());
@@ -86,9 +85,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if sessions.is_empty() {
-        sessions.push("hyprland".into());
+        sessions.push("heyde".into());
         sessions.push("plasma".into());
-        sessions.push("gnome".into());
     }
 
 

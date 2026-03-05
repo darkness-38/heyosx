@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=heyDE
+Comment=The heyOS Wayland Compositor
+Exec=heyde
+Type=Application
+DesktopNames=heyDE

@@ -277,8 +277,14 @@ configure_system() {
     genfstab -U "$MOUNT_POINT" >> "$MOUNT_POINT/etc/fstab"
     cp -r /etc/skel/. "$MOUNT_POINT/etc/skel/"
     cp /usr/bin/hey-greeter "$MOUNT_POINT/usr/bin/"
+    cp /usr/bin/heyde "$MOUNT_POINT/usr/bin/"
+    cp /usr/bin/heydm "$MOUNT_POINT/usr/bin/"
+    mkdir -p "$MOUNT_POINT/usr/share/heyde/shaders"
+    cp /usr/share/heyde/shaders/* "$MOUNT_POINT/usr/share/heyde/shaders/"
     cp /usr/local/bin/hey-greeter-launch "$MOUNT_POINT/usr/local/bin/"
-    chmod 755 "$MOUNT_POINT/usr/bin/hey-greeter" "$MOUNT_POINT/usr/local/bin/hey-greeter-launch"
+    mkdir -p "$MOUNT_POINT/etc/greetd"
+    cp /etc/greetd/config.toml "$MOUNT_POINT/etc/greetd/"
+    chmod 755 "$MOUNT_POINT/usr/bin/hey-greeter" "$MOUNT_POINT/usr/bin/heyde" "$MOUNT_POINT/usr/bin/heydm" "$MOUNT_POINT/usr/local/bin/hey-greeter-launch"
 
     # Chroot scripting (Atomic)
     cat << EOF | arch-chroot "$MOUNT_POINT"
