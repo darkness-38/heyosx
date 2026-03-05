@@ -18,7 +18,9 @@ A from-scratch Wayland compositor for **heyOS**, written in C11 using **wlroots*
 
 ## Milestones
 - [x] **Milestone 1: Core Foundation** — Basic wlroots server, XDG-Shell, and GLES2 rendering.
-- [ ] **Milestone 2: System Integration & Polish** — Fix permissions (heydm), stable session handoff, and VM compatibility.
+- [x] **Milestone 2: System Integration & Polish** — Fix permissions (heydm), stable session handoff, and VM compatibility.
+- [x] **Milestone 3: Fix heyDE Rendering** — Fix black screen, implement background, and enable custom shaders.
+- [ ] **Milestone 4: heyWM & Interaction** — Better window management (closing, focusing, floating/tiling).
 
 ## Tech Stack
 - **Language:** C11

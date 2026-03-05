@@ -1,15 +1,16 @@
-# Requirements: Milestone 2 (System Integration & Polish)
+# Requirements: Milestone 5 (Monet & Theming)
 
 ## Goal
-Ensure the heyOS live environment boots reliably into `hey-greeter` and correctly transitions to `heyDE` or other selected sessions with proper permissions and environment variables.
+Implement a dynamic, Material You-inspired (Monet) theming system that sets the visual tone for the entire heyOS desktop environment.
 
 ## Functional Requirements
-1. **Binary Persistence:** All critical binaries (`heydm`, `hey-greeter`, `heyde`) must be built and copied to the correct paths in `airootfs` by the `build.sh` script.
-2. **Execute Permissions:** Ensure `chmod 755` is applied to all binaries and scripts in the ISO.
-3. **Session Handoff:** `hey-greeter` must be able to launch `heyde` or other Wayland sessions without permission errors.
-4. **VM Stability:** Software rendering defaults must be robustly set for the greeter and the compositor in VM environments.
+1. **Dynamic Palette Generation:** The compositor should be able to update its color palette (accent, background, surface) dynamically.
+2. **Glassmorphism:** Implementing "glass" surfaces with soft transparency (surface color with 0.8 alpha) and subtle borders.
+3. **Animated Transitions:** Colors should transition smoothly when changed (e.g., using the animation manager).
+4. **System Integration:** Provide a way for external tools (like a control center) to trigger color updates.
 
 ## Technical Requirements
-- Update `build.sh` to explicitly handle `heydm` (as a copy of `hey-greeter`).
-- Verify `greetd` configuration points to the correct launcher.
-- Standardize environment variables for software rendering across `/etc/environment` and local wrappers.
+- Extend `monet.c` to support "palette" updates.
+- Integrate the `monet_colors` into the rendering pipeline (using them in shaders).
+- Create a `Logo+M` keybinding to "cycle" through 3-4 preset "end-4" palettes for testing.
+- Use the `heyde_animation_manager` to interpolate color changes over 500ms.

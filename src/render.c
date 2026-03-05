@@ -5,6 +5,8 @@
 #include <wlr/util/log.h>
 #include <wlr/render/gles2.h>
 #include <wlr/types/wlr_matrix.h>
+#include <wlr/types/wlr_scene.h>
+#include <wlr/render/wlr_renderer.h>
 #include "render.h"
 #include "server.h"
 #include "monet.h"
@@ -74,28 +76,6 @@ static GLuint create_program(const char *vert_src, const char *frag_src) {
     return prog;
 }
 
-static void fb_init(struct blur_fb *fb, int width, int height) {
-    if (fb->fb != 0 && fb->width == width && fb->height == height) return;
-    if (fb->fb != 0) {
-        glDeleteFramebuffers(1, &fb->fb);
-        glDeleteTextures(1, &fb->tex);
-    }
-    fb->width = width;
-    fb->height = height;
-    glGenTextures(1, &fb->tex);
-    glBindTexture(GL_TEXTURE_2D, fb->tex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-    glGenFramebuffers(1, &fb->fb);
-    glBindFramebuffer(GL_FRAMEBUFFER, fb->fb);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fb->tex, 0);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-}
-
 void heyde_render_init(struct heyde_server *server) {
     if (!wlr_renderer_is_gles2(server->renderer)) {
         wlr_log(WLR_INFO, "Skipping GLES2 shader initialization (not using GLES2 renderer)");
@@ -137,41 +117,17 @@ void heyde_render_init(struct heyde_server *server) {
 
     server->render.blur_passes = 5; // Default
 
-    (void)fb_init;
-
     free(vert_src);
     free(corner_frag_src);
     free(shadow_frag_src);
     free(blur_frag_src);
 }
 
-struct heyde_render_data {
-    struct heyde_server *server;
-    struct wlr_output *wlr_output;
-    struct wlr_render_pass *render_pass;
-};
-
-static void render_scene_buffer(struct wlr_scene_buffer *scene_buffer, int sx, int sy, void *data) {
-    (void)sx; (void)sy;
-    struct heyde_render_data *render_data = data;
-    struct heyde_server *server = render_data->server;
-    (void)server;
-
-    struct wlr_scene_node *node = &scene_buffer->node;
-    
-    // Find the toplevel associated with this node if any
-    struct wlr_scene_tree *tree = node->parent;
-    while (tree) {
-        if (tree->node.data) {
-            // Found a toplevel
-            break;
-        }
-        tree = tree->node.parent;
-    }
-}
-
 void heyde_render_output(struct heyde_server *server, struct wlr_scene_output *scene_output, struct wlr_scene_output_state_options *options) {
     (void)server;
-    (void)render_scene_buffer;
+    // Commit the output. This is simple and uses standard wlroots scene rendering.
+    // In Milestone 3, we want to solve the black screen first.
+    // If the black screen is resolved by Phase 8 (background + layers),
+    // then custom shaders are the next step.
     wlr_scene_output_commit(scene_output, options);
 }

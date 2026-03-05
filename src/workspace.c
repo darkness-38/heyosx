@@ -11,7 +11,7 @@ static void workspace_animation_update(struct heyde_animation *animation, double
 }
 
 void heyde_workspaces_init(struct heyde_server *server) {
-    server->workspace_tree = wlr_scene_tree_create(server->layers[ZWLR_LAYER_SHELL_V1_LAYER_TOP]);
+    server->workspace_tree = wlr_scene_tree_create(server->layers[2]);
     server->current_workspace = 0;
 
     struct wlr_box layout_box;

@@ -71,7 +71,7 @@ struct heyde_server {
     struct wlr_renderer *renderer;
     struct wlr_allocator *allocator;
     struct wlr_scene *scene;
-    struct wlr_scene_tree *layers[4]; // background, bottom, top, overlay
+    struct wlr_scene_tree *layers[5]; // background, bottom, workspaces, top, overlay
     struct wlr_output_layout *output_layout;
 
     struct wl_list outputs;
@@ -86,6 +86,8 @@ struct heyde_server {
     struct wl_listener new_layer_shell_surface;
 
     struct heyde_colors *monet_colors;
+    int monet_palette_idx;
+    struct wlr_scene_rect *background_rect;
     struct heyde_render_state render;
     struct heyde_animation_manager animation_mgr;
 

@@ -13,6 +13,7 @@ struct heyde_colors {
 struct heyde_server;
 
 void heyde_monet_init(struct heyde_server *server);
+void heyde_monet_set_palette(struct heyde_server *server, int index);
 struct heyde_colors *heyde_monet_get_colors(struct heyde_server *server);
 
 #endif

@@ -42,6 +42,12 @@ static bool handle_keybinding(struct heyde_server *server, uint32_t modifiers, x
             exit(1);
         }
         return true;
+    case XKB_KEY_space:
+        if (fork() == 0) {
+            execl("/bin/sh", "/bin/sh", "-c", "wofi --show drun", NULL);
+            exit(1);
+        }
+        return true;
     case XKB_KEY_q:
         if (server->seat->keyboard_state.focused_surface) {
             struct wlr_xdg_surface *xdg_surface = wlr_xdg_surface_try_from_wlr_surface(
@@ -67,6 +73,9 @@ static bool handle_keybinding(struct heyde_server *server, uint32_t modifiers, x
     case XKB_KEY_8:
     case XKB_KEY_9:
         heyde_workspace_activate(server, sym - XKB_KEY_1);
+        return true;
+    case XKB_KEY_m:
+        heyde_monet_set_palette(server, (server->monet_palette_idx + 1) % 4);
         return true;
     }
     return false;
@@ -202,9 +211,37 @@ static void server_cursor_update_focus(struct heyde_server *server, uint32_t tim
 static void process_cursor_move(struct heyde_server *server) {
     /* Move the grabbed toplevel to the new position. */
     struct heyde_toplevel *toplevel = server->grabbed_toplevel;
-    wlr_scene_node_set_position(&toplevel->scene_tree->node,
-        server->cursor->x - server->grab_x,
-        server->cursor->y - server->grab_y);
+    
+    int new_x = server->cursor->x - server->grab_x;
+    int new_y = server->cursor->y - server->grab_y;
+
+    // Snap to edges
+    struct wlr_box layout_box;
+    wlr_output_layout_get_box(server->output_layout, NULL, &layout_box);
+
+    struct wlr_box geo_box;
+    wlr_xdg_surface_get_geometry(toplevel->xdg_toplevel->base, &geo_box);
+
+    int snap_threshold = 20;
+
+    // Snap left
+    if (abs(new_x + geo_box.x) < snap_threshold) {
+        new_x = -geo_box.x;
+    }
+    // Snap right
+    if (abs((new_x + geo_box.x + geo_box.width) - layout_box.width) < snap_threshold) {
+        new_x = layout_box.width - geo_box.width - geo_box.x;
+    }
+    // Snap top
+    if (abs(new_y + geo_box.y) < snap_threshold) {
+        new_y = -geo_box.y;
+    }
+    // Snap bottom
+    if (abs((new_y + geo_box.y + geo_box.height) - layout_box.height) < snap_threshold) {
+        new_y = layout_box.height - geo_box.height - geo_box.y;
+    }
+
+    wlr_scene_node_set_position(&toplevel->scene_tree->node, new_x, new_y);
 }
 
 static void process_cursor_resize(struct heyde_server *server) {
@@ -290,6 +327,10 @@ static void server_cursor_button_handler(struct wl_listener *listener, void *dat
         struct heyde_toplevel *toplevel = desktop_toplevel_at(server, server->cursor->x, server->cursor->y, &surface, &sx, &sy);
         if (toplevel != NULL) {
             wlr_scene_node_raise_to_top(&toplevel->scene_tree->node);
+            wlr_seat_keyboard_notify_enter(server->seat, toplevel->xdg_toplevel->base->surface, 
+                NULL, 0, NULL);
+        } else {
+            wlr_seat_keyboard_clear_focus(server->seat);
         }
     }
 }
@@ -351,6 +392,10 @@ static void toplevel_map_handler(struct wl_listener *listener, void *data) {
     (void)listener;
     (void)data;
     struct heyde_toplevel *toplevel = wl_container_of(listener, toplevel, map);
+    
+    const char *title = toplevel->xdg_toplevel->title;
+    wlr_log(WLR_DEBUG, "Toplevel mapped: %s", title ? title : "(null)");
+
     wl_list_insert(&toplevel->server->toplevels, &toplevel->link);
 
     // Initial position for animation
@@ -491,7 +536,17 @@ static void server_new_layer_shell_surface_handler(struct wl_listener *listener,
     layer_surface->server = server;
     layer_surface->wlr_layer_surface = wlr_layer_surface;
 
-    struct wlr_scene_tree *layer_tree = server->layers[wlr_layer_surface->pending.layer];
+    // Map wlroots layers to our scene graph layers
+    int layer_idx;
+    switch (wlr_layer_surface->pending.layer) {
+    case ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND: layer_idx = 0; break;
+    case ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM:     layer_idx = 1; break;
+    case ZWLR_LAYER_SHELL_V1_LAYER_TOP:        layer_idx = 3; break;
+    case ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY:    layer_idx = 4; break;
+    default: layer_idx = 3; break;
+    }
+
+    struct wlr_scene_tree *layer_tree = server->layers[layer_idx];
     layer_surface->scene_layer_surface = wlr_scene_layer_surface_v1_create(layer_tree, wlr_layer_surface);
 
     layer_surface->map.notify = layer_surface_map_handler;
@@ -511,6 +566,9 @@ static void server_new_xdg_surface_handler(struct wl_listener *listener, void *d
     if (xdg_surface->role != WLR_XDG_SURFACE_ROLE_TOPLEVEL) {
         return;
     }
+
+    const char *title = xdg_surface->toplevel->title;
+    wlr_log(WLR_DEBUG, "New XDG surface: %s", title ? title : "(null)");
 
     struct heyde_toplevel *toplevel = calloc(1, sizeof(struct heyde_toplevel));
     toplevel->server = server;
@@ -536,6 +594,19 @@ static void server_new_xdg_surface_handler(struct wl_listener *listener, void *d
     wl_signal_add(&xdg_surface->toplevel->events.request_maximize, &toplevel->request_maximize);
     toplevel->request_fullscreen.notify = toplevel_request_fullscreen_handler;
     wl_signal_add(&xdg_surface->toplevel->events.request_fullscreen, &toplevel->request_fullscreen);
+
+    // Center the window on the output layout
+    struct wlr_box layout_box;
+    wlr_output_layout_get_box(server->output_layout, NULL, &layout_box);
+    
+    struct wlr_box geo_box;
+    wlr_xdg_surface_get_geometry(xdg_surface, &geo_box);
+
+    int x = (layout_box.width - geo_box.width) / 2;
+    int y = (layout_box.height - geo_box.height) / 2;
+
+    // Adjust for workspace offset (relative to ws->scene_tree which is already offset)
+    wlr_scene_node_set_position(&toplevel->scene_tree->node, x - geo_box.x, y - geo_box.y);
 }
 
 static void output_frame_handler(struct wl_listener *listener, void *data) {
@@ -653,12 +724,14 @@ int main(int argc, char *argv[]) {
     if (!server.renderer) {
         wlr_log(WLR_INFO, "failed to create hardware renderer, retrying with forced GLES2 software...");
         setenv("WLR_RENDERER", "gles2", 1);
+        setenv("LIBGL_ALWAYS_SOFTWARE", "1", 1);
         server.renderer = wlr_renderer_autocreate(server.backend);
     }
 
     if (!server.renderer) {
         wlr_log(WLR_INFO, "failed to create GLES2 renderer, retrying with Pixman...");
         setenv("WLR_RENDERER", "pixman", 1);
+        unsetenv("LIBGL_ALWAYS_SOFTWARE");
         server.renderer = wlr_renderer_autocreate(server.backend);
     }
 
@@ -681,11 +754,12 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    // Create scene graph layers
-    server.layers[ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND] = wlr_scene_tree_create(&server.scene->tree);
-    server.layers[ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM] = wlr_scene_tree_create(&server.scene->tree);
-    server.layers[ZWLR_LAYER_SHELL_V1_LAYER_TOP] = wlr_scene_tree_create(&server.scene->tree);
-    server.layers[ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY] = wlr_scene_tree_create(&server.scene->tree);
+    // Create scene graph layers (z-order: back to front)
+    server.layers[0] = wlr_scene_tree_create(&server.scene->tree); // background
+    server.layers[1] = wlr_scene_tree_create(&server.scene->tree); // bottom
+    server.layers[2] = wlr_scene_tree_create(&server.scene->tree); // workspaces
+    server.layers[3] = wlr_scene_tree_create(&server.scene->tree); // top
+    server.layers[4] = wlr_scene_tree_create(&server.scene->tree); // overlay
 
     server.output_layout = wlr_output_layout_create(server.wl_display);
     if (!server.output_layout) {
@@ -727,6 +801,11 @@ int main(int argc, char *argv[]) {
     heyde_render_init(&server);
     heyde_animation_manager_init(&server.animation_mgr);
     heyde_workspaces_init(&server);
+
+    struct wlr_box layout_box;
+    wlr_output_layout_get_box(server.output_layout, NULL, &layout_box);
+    server.background_rect = wlr_scene_rect_create(server.layers[0],
+        layout_box.width, layout_box.height, server.monet_colors->background);
 
     server.new_output.notify = server_new_output_handler;
     wl_signal_add(&server.backend->events.new_output, &server.new_output);
