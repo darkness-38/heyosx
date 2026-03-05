@@ -167,6 +167,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     if !env.iter().any(|s| s.starts_with("WLR_RENDERER_ALLOW_SOFTWARE=")) {
                                         env.push("WLR_RENDERER_ALLOW_SOFTWARE=1".to_string());
                                     }
+                                    if !env.iter().any(|s| s.starts_with("LIBGL_ALWAYS_SOFTWARE=")) {
+                                        env.push("LIBGL_ALWAYS_SOFTWARE=1".to_string());
+                                    }
+                                    if !env.iter().any(|s| s.starts_with("GALLIUM_DRIVER=")) {
+                                        env.push("GALLIUM_DRIVER=llvmpipe".to_string());
+                                    }
                                     if !env.iter().any(|s| s.starts_with("AQ_NO_MODIFIERS=")) {
                                         env.push("AQ_NO_MODIFIERS=1".to_string());
                                     }
